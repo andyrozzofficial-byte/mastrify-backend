@@ -480,62 +480,24 @@ error:"Upload failed"
 /* ANALYZE TRACK */
 
 app.post("/analyze", upload.single("file"), async (req, res) => {
-
   try {
+    console.log("🔥 HIT /analyze")
+
+    console.log("FILE:", req.file)
 
     if (!req.file) {
+      console.log("❌ NO FILE RECEIVED")
       return res.status(400).json({ error: "No file uploaded" })
     }
 
-    // convert to wav (samma som dina andra routes)
-    const fileName = req.file.filename + ".wav"
-    const newPath = req.file.path + ".wav"
+    console.log("FILE PATH:", req.file.path)
 
-    fs.renameSync(req.file.path, newPath)
-
-    // 🔥 ANALYSIS
-    const analysis = await analyzeTrack(newPath)
-
-    // 🔥 RETURN CLEAN MIX ANALYZER DATA
-    const full = generateFullAnalysis(analysis)
-
-// skapa fake issues från feedback
-const issues = full.feedback?.map((text, i) => ({
-  text,
-  level: "medium",
-  realImpact: 3
-})) || []
-
-// skapa enkla recommendations
-const recommendations = full.fixes?.map((fix, i) => ({
-  title: fix,
-  steps: ["Apply fix in your DAW"]
-})) || []
-
-res.json({
-  ...analysis,
-
-  mixQuality: full.score,
-
-  issues: issues || [],
-  recommendations: recommendations || [],
-
-  dynamicRange: analysis.dynamicRange || 8,
-  stereoWidth: analysis.stereoWidth || 0.5,
-  bassWeight: analysis.lowEnergy || 0.5,
-  brightness: analysis.highEnergy || 0.5
-})
+    return res.json({ success: true })
 
   } catch (err) {
-
-    console.log("ANALYZE ERROR:", err)
-
-    res.status(500).json({
-      error: "Analyze failed"
-    })
-
+    console.error("❌ ERROR:", err)
+    res.status(500).json({ error: "server crash" })
   }
-
 })
 
 function generateDynamicFixes(analysis){
