@@ -29,12 +29,16 @@ const mastersDir = path.join(__dirname, "masters")
 console.log("MASTERS DIR:", mastersDir)
 
 // ensure folders exist
-if (!fs.existsSync(uploadsDir)) {
-fs.mkdirSync(uploadsDir)
-}
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true })
+  }
 
-if (!fs.existsSync(mastersDir)) {
-fs.mkdirSync(mastersDir)
+  if (!fs.existsSync(mastersDir)) {
+    fs.mkdirSync(mastersDir, { recursive: true })
+  }
+} catch (err) {
+  console.log("Folder error:", err)
 }
 
 // serve masters folder
