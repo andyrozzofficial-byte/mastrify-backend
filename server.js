@@ -54,15 +54,9 @@ try {
 // serve masters folder
 app.use("/masters", express.static(mastersDir))
 app.use("/uploads", express.static(uploadsDir))
-// upload config
-const storage = multer.diskStorage({
-  destination: uploadsDir,
-  filename: (req, file, cb) => {
-  cb(null, Date.now() + path.extname(file.originalname))
-}
+const upload = multer({
+  dest: "/tmp"
 })
-
-const upload = multer({ storage })
 
 // cache analysis
 const analysisCache = {}
