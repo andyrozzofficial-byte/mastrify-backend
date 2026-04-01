@@ -810,6 +810,13 @@ app.post("/fix-mix", upload.single("track"), async (req, res) => {
       return res.status(400).json({ error: "No track uploaded" })
     }
 
+
+
+// 🔥 LÄGG IN DETTA EXAKT HÄR
+if (!file.mimetype.startsWith("audio") && !file.mimetype.startsWith("video")) {
+  return res.status(400).json({ error: "Invalid file type" })
+}
+
     const filePath = file.path + ".wav"
 
     fs.renameSync(file.path, filePath)
