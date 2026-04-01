@@ -670,10 +670,13 @@ app.post("/waitlist", (req, res) => {
   res.json({ success: true })
 })
 
-// ✅ PORT SKA LIGGA HÄR
+// ✅ LÄGG TILL DENNA
+app.get("/", (req, res) => {
+  res.send("Mastrify backend is live 🚀")
+})
+
 const PORT = process.env.PORT || 3001
 
-// ✅ SEN STARTAR SERVERN
 app.listen(PORT, "0.0.0.0", () => {
   console.log("🔥 Server running on port", PORT)
 })
