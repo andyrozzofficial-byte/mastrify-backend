@@ -645,7 +645,7 @@ app.post("/fix-mix", upload.single("track"), async (req, res) => {
 
     fs.renameSync(file.path, filePath)
 
-    const analysis = await analyzeTrack(filePath)
+    const analysis = {}
 
     const fixes = generateDynamicFixes(analysis)
 
