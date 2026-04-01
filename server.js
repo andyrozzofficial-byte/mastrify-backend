@@ -34,6 +34,8 @@ app.get("/", (req, res) => {
 // absolute paths
 const uploadsDir = "/tmp/uploads"
 const mastersDir = "/tmp/masters"
+console.log("Uploads exists:", fs.existsSync(uploadsDir))
+console.log("Masters exists:", fs.existsSync(mastersDir))
 console.log("MASTERS DIR:", mastersDir)
 
 // ensure folders exist
@@ -684,7 +686,9 @@ app.get("/test", (req, res) => {
   res.send("TEST OK")
 })
 
-const PORT = process.env.PORT
+const PORT = process.env.PORT || 3000
+
+console.log("PORT VALUE:", PORT)
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log("🔥 Server running on port", PORT)
