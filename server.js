@@ -660,22 +660,20 @@ app.post("/fix-mix", upload.single("track"), async (req, res) => {
 
 })
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log("🔥 Server running on port", PORT)
-})
+
 
 /* START SERVER */
 
 app.post("/waitlist", (req, res) => {
   const { email } = req.body
-
   console.log("🔥 New signup:", email)
-
   res.json({ success: true })
 })
 
+// ✅ PORT SKA LIGGA HÄR
 const PORT = process.env.PORT || 3001
 
-app.listen(PORT, () => {
+// ✅ SEN STARTAR SERVERN
+app.listen(PORT, "0.0.0.0", () => {
   console.log("🔥 Server running on port", PORT)
 })
