@@ -24,8 +24,8 @@ app.get("/", (req, res) => {
 })
 
 // absolute paths
-const uploadsDir = path.join(__dirname, "uploads")
-const mastersDir = path.join(__dirname, "masters")
+const uploadsDir = "/tmp/uploads"
+const mastersDir = "/tmp/masters"
 console.log("MASTERS DIR:", mastersDir)
 
 // ensure folders exist
