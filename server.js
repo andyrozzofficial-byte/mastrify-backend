@@ -5,8 +5,8 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 
-// import { analyzeTrack } from "./analyze.js"
-// import { masterTrack } from "./master.js"
+import { analyzeTrack } from "./analyze.js"
+import { masterTrack } from "./master.js"
 import { aiMixAssistant } from "./ai.js"
 import { buildMasteringChain } from "./masteringEngine.js"
 
