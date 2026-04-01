@@ -7,8 +7,8 @@ import { fileURLToPath } from "url"
 
 // import { analyzeTrack } from "./analyze.js"
 // import { masterTrack } from "./master.js"
-import { aiMixAssistant } from "./ai.js"
-import { buildMasteringChain } from "./masteringEngine.js"
+// import { aiMixAssistant } from "./ai.js"
+// import { buildMasteringChain } from "./masteringEngine.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -422,16 +422,13 @@ referenceAnalysis = null
 // cache analysis
 analysisCache[fileName] = analysis
 
-const ai = aiMixAssistant(analysis, referenceAnalysis)
+const ai = {}
 
 const full = generateFullAnalysis(analysis) // 🔥 FLYTTA UPP
 
 ai.message = full.status
 
-const masteringChain = buildMasteringChain({
-  ...analysis,
-  targetLufs: ai?.targetLufs || -9
-})
+const masteringChain = {}
 
 const loudness = {
 original: analysis.lufs || -18,
