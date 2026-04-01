@@ -671,6 +671,10 @@ app.post("/waitlist", (req, res) => {
   res.json({ success: true })
 })
 
+app.get("/test", (req, res) => {
+  res.send("TEST OK")
+})
+
 const PORT = process.env.PORT || 3001
 
 app.listen(PORT, () => {
