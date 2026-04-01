@@ -5,8 +5,8 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 
-import { analyzeTrack } from "./analyze.js"
-import { masterTrack } from "./master.js"
+// import { analyzeTrack } from "./analyze.js"
+// import { masterTrack } from "./master.js"
 import { aiMixAssistant } from "./ai.js"
 import { buildMasteringChain } from "./masteringEngine.js"
 
@@ -409,12 +409,14 @@ fs.renameSync(track.path, newPath)
 
 console.log("Uploaded:", fileName)
 
-const analysis = await analyzeTrack(newPath)
+// const analysis = await analyzeTrack(newPath)
+const analysis = {}
 
 let referenceAnalysis = null
 
 if(reference){
-referenceAnalysis = await analyzeTrack(reference.path)
+// referenceAnalysis = await analyzeTrack(reference.path)
+referenceAnalysis = null
 }
 
 // cache analysis
@@ -617,12 +619,7 @@ const newPath = file.path + ".wav"
 
 fs.renameSync(file.path, newPath)
 
-const result = await masterTrack({
-  file: fileName,
-  reference: referenceFile?.filename, // 🔥 korrekt
-  style: "LOUD",
-  mode: "pro"
-})
+const result = { url: "/masters/test.wav" }
 
       res.json({
         before: `/uploads/${file.filename}`,
