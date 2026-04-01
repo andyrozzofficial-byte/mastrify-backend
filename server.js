@@ -5,9 +5,8 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 
-import { analyzeTrack } from "./analyze.js"
-
-import { masterTrack } from "./master.js"
+// import { analyzeTrack } from "./analyze.js"
+// import { masterTrack } from "./master.js"
 import { aiMixAssistant } from "./ai.js"
 import { buildMasteringChain } from "./masteringEngine.js"
 
@@ -18,6 +17,11 @@ const app = express()
 
 app.use(cors())
 app.use(express.json())
+
+// ✅ LÄGG TILL DENNA
+app.get("/", (req, res) => {
+  res.send("Mastrify backend is live 🚀")
+})
 
 // absolute paths
 const uploadsDir = path.join(__dirname, "uploads")
@@ -668,11 +672,6 @@ app.post("/waitlist", (req, res) => {
   const { email } = req.body
   console.log("🔥 New signup:", email)
   res.json({ success: true })
-})
-
-// ✅ LÄGG TILL DENNA
-app.get("/", (req, res) => {
-  res.send("Mastrify backend is live 🚀")
 })
 
 const PORT = process.env.PORT || 3001
