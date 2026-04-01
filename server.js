@@ -680,10 +680,19 @@ app.get("/test", (req, res) => {
   res.send("TEST OK")
 })
 
-const PORT = process.env.PORT || 3000
+const PORT = process.env.PORT
 
-console.log("PORT VALUE:", PORT)
+if (!PORT) {
+  console.error("❌ NO PORT PROVIDED")
+  process.exit(1)
+}
 
+// 🔥 VIKTIG: snabb health response innan allt annat
+app.get("/health", (req, res) => {
+  res.status(200).send("OK")
+})
+
+// 🔥 STARTA SERVER DIREKT
 app.listen(PORT, "0.0.0.0", () => {
   console.log("🔥 Server running on port", PORT)
 })
