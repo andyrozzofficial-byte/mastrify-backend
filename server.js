@@ -660,7 +660,9 @@ app.post("/fix-mix", upload.single("track"), async (req, res) => {
 
 })
 
-
+app.listen(PORT, "0.0.0.0", () => {
+  console.log("🔥 Server running on port", PORT)
+})
 
 /* START SERVER */
 
