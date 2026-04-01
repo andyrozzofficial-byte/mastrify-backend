@@ -5,6 +5,14 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 
+process.on("uncaughtException", (err) => {
+  console.error("💥 UNCAUGHT:", err)
+})
+
+process.on("unhandledRejection", (err) => {
+  console.error("💥 PROMISE ERROR:", err)
+})
+
 // import { analyzeTrack } from "./analyze.js"
 // import { masterTrack } from "./master.js"
 // import { aiMixAssistant } from "./ai.js"
@@ -680,4 +688,5 @@ const PORT = process.env.PORT || 3001
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log("🔥 Server running on port", PORT)
+  console.log("ENV PORT:", process.env.PORT)
 })
