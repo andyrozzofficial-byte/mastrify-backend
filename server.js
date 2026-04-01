@@ -13,7 +13,7 @@ process.on("unhandledRejection", (err) => {
   console.error("💥 PROMISE ERROR:", err)
 })
 
-// import { analyzeTrack } from "./analyze.js"
+import { analyzeTrack } from "./analyze.js"
 // import { masterTrack } from "./master.js"
 // import { aiMixAssistant } from "./ai.js"
 // import { buildMasteringChain } from "./masteringEngine.js"
@@ -223,7 +223,7 @@ return plan
 
 function calculateMixScore(a){
 
-  let score = 100
+  let score = 75
 
   const targetLufs = -14
   const targetDynamicMin = 6
@@ -234,7 +234,7 @@ function calculateMixScore(a){
   /* ---------------- SAFE VALUES ---------------- */
 
   const lufs = Number(a.lufs)
-  const dynamic = Number(a.dynamicRange)
+const dynamic = Number(a.dynamicRange)
   const stereo = Number(a.stereoWidth)
   const low = Number(a.lowEnergy)
   const high = Number(a.highEnergy)
@@ -245,8 +245,8 @@ function calculateMixScore(a){
 
   // 🎯 perfekt mix range
   if(lufs >= -18 && lufs <= -12){
-    score += 10
-  }
+  score += 10
+}
 
   // 🔇 för tyst
   else if(lufs < -18){
@@ -275,7 +275,7 @@ if(!isNaN(dynamic)){
 
 if(!isNaN(stereo)){
   if(stereo >= 0.4 && stereo <= 0.8){
-    score += 5
+    score += 3
   }
 }
 
@@ -328,68 +328,163 @@ return finalScore
 
 function generateFullAnalysis(a){
 
-let score = calculateMixScore(a)
+  let score = calculateMixScore(a)
 
-const feedback = []
-const fixes = []
-const plan = []
+  const feedback = []
+  const fixes = []
+  const plan = []
 
-const targetLufs = -9   // 👈 LÄGG TILL DENNA
+  let mainIssue = null
+  const secondaryIssues = []
 
-/* LOUDNESS */
+  const targetLufs = -9
 
-const lufs = Number(a.lufs)
+  const lufs = Number(a.lufs)
+  const dynamic = Number(a.dynamicRange)
+  const stereo = Number(a.stereoWidth)
+  const low = Number(a.lowEnergy)
+  const high = Number(a.highEnergy)
 
-if(!isNaN(lufs)){
+  /* ---------------- LOUDNESS ---------------- */
 
-  if(lufs > -7){
-    feedback.push("Track is too loud / over-compressed")
-    fixes.push("Reduce limiter input by 2–4 dB")
-    plan.push("reduce loudness slightly")
+  if(!isNaN(lufs)){
+
+    if(lufs < -20){
+      mainIssue = "Low output level"
+      fixes.push("Boost loudness to commercial level")
+      plan.push("increase loudness significantly")
+    }
+
+
+    else if(lufs > -9){
+      mainIssue = "Track too loud — over-compressed"
+      fixes.push("Reduce limiter input by 2–4 dB")
+      plan.push("reduce loudness slightly")
+    }
+
   }
 
-  else if(lufs < -20){
-    feedback.push("Low output level")
+  /* ---------------- STEREO ---------------- */
 
-    const neededGain = Math.round(targetLufs - lufs)
+  if(!isNaN(stereo)){
 
-    fixes.push("Boost loudness to commercial level")
+    if(stereo < 0.3){
+      if(!mainIssue){
+        mainIssue = "Stereo field is too narrow — mix feels centered"
+      } else {
+        secondaryIssues.push("Stereo field is slightly narrow")
+      }
 
-    plan.push("increase loudness significantly")
+      fixes.push("Widen pads and atmospheric elements")
+      fixes.push("Use Haas delay (10–30ms)")
+      plan.push("widen stereo image")
+    }
+
   }
 
-  else if(lufs < -12){
-    feedback.push("Good level — mastering will enhance it")
+  /* ---------------- ENERGY ---------------- */
+
+  if(!isNaN(lufs) && lufs < -14 && !mainIssue){
+    mainIssue = "Mix lacks energy"
+    fixes.push("Boost upper mids")
+    fixes.push("Enhance transients")
+    fixes.push("Add saturation")
+    plan.push("increase energy")
   }
 
+  /* ---------------- LOW END ---------------- */
+
+  if(!isNaN(low)){
+
+    if(low > 0.7){
+      secondaryIssues.push("Low end muddy")
+      fixes.push("Reduce 60–120 Hz")
+      plan.push("tighten low end")
+    }
+
+    else if(low < 0.2){
+      secondaryIssues.push("Low end weak")
+      fixes.push("Boost sub (40–80 Hz)")
+    }
+
+  }
+
+  /* ---------------- HIGH END ---------------- */
+
+  if(!isNaN(high) && high < 0.2){
+    secondaryIssues.push("Lacking brightness")
+    fixes.push("Boost around 10–12kHz")
+  }
+
+  /* ---------------- DYNAMICS ---------------- */
+
+  if(!isNaN(dynamic)){
+
+    if(dynamic > 15){
+      secondaryIssues.push("Mix is too dynamic — may sound weak compared to commercial tracks")
+      fixes.push("Add gentle compression or saturation")
+      plan.push("control dynamics")
+    }
+
+    else if(dynamic < 5){
+      secondaryIssues.push("Overcompressed mix")
+      fixes.push("Reduce compression to restore punch")
+    }
+
+  }
+
+  /* ---------------- FALLBACK ---------------- */
+
+  // FALLBACK
+if(!mainIssue && secondaryIssues.length > 0){
+  mainIssue = secondaryIssues[0]
 }
 
-/* LOW END */
-
-if(a.lowEnergy > 0.7){
-feedback.push("Low end muddy")
-fixes.push("Reduce 60–120 Hz")
-plan.push("tighten low end")
+if(secondaryIssues.length === 0 && mainIssue){
+  secondaryIssues.push("Fine-tune stereo image")
 }
 
-else if(a.lowEnergy < 0.2){
-feedback.push("Low end weak")
-fixes.push("Boost sub (40–80 Hz)")
-}
+  /* ---------------- VERDICT ---------------- */
 
-/* osv... */
+  let verdict = ""
 
-return {
-score,
-status: score < 50 ? "❌ Not ready"
-: score < 75 ? "⚠️ Needs work"
-: score < 90 ? "👍 Almost ready"
-: "🔥 Ready",
+  if(score > 90){
+    verdict = "Ready for mastering — no critical issues detected"
+  }
+  else if(score > 75){
+    verdict = "Good foundation — small improvements needed before mastering"
+  }
+  else{
+    verdict = "Mix needs improvement before release"
+  }
 
-feedback,
-fixes,
-plan
-}
+  /* ---------------- READY FLAG ---------------- */
+
+  const readyForMastering = score > 90
+
+  /* ---------------- RETURN ---------------- */
+
+  return {
+    score,
+
+    status:
+      score < 50 ? "❌ Not ready" :
+      score < 75 ? "⚠️ Needs work" :
+      score < 90 ? "👍 Almost ready" :
+      "🔥 Ready",
+
+    verdict,
+
+    mainIssue,
+    secondaryIssues,
+
+    feedback,
+    fixes: fixes.slice(0,4),
+    plan,
+
+    readyForMastering,
+    targetLufs
+  }
 }
 
 
@@ -423,7 +518,10 @@ fs.renameSync(track.path, newPath)
 console.log("Uploaded:", fileName)
 
 // const analysis = await analyzeTrack(newPath)
-const analysis = {}
+const analysis = await analyzeTrack(newPath)
+if (!analysis) {
+  return res.status(500).json({ error: "Analysis failed" })
+}
 
 let referenceAnalysis = null
 
@@ -452,6 +550,20 @@ dynamicRange: analysis.dynamicRange || 8
 res.json({
   file: fileName,
 
+  // 🔥 VIKTIGT (lägg till dessa)
+  lufs: analysis.lufs ?? -12,
+dynamicRange: analysis.dynamicRange ?? 8,
+stereoWidth: analysis.stereoWidth ?? 0.5,
+  energy: analysis.energy ?? 0.7,
+
+  mixQuality: full.score,
+
+  verdict: full.verdict,
+
+  bassWeight: analysis.lowEnergy ?? 0.5,
+brightness: analysis.highEnergy ?? 0.25,
+
+  // 👇 denna kan vara kvar om du vill
   analysis: {
     energy: analysis.energy,
     bpm: analysis.bpm,
@@ -460,11 +572,26 @@ res.json({
     stereoWidth: analysis.stereoWidth
   },
 
-  // 🔥 RÄTT PLATS (INUTI objektet)
-  mixQuality: analysis.mixQuality,
-  loudnessScore: analysis.loudnessScore,
-  masterPotential: analysis.masterPotential,
-  potentialLabel: analysis.potentialLabel,
+  // 🔥 VIKTIGT (för UI)
+  issues: [
+  full.mainIssue && {
+    text: full.mainIssue,
+    level: "high",
+    realImpact: 10
+  },
+
+  ...full.secondaryIssues.map(f => ({
+    text: f,
+    level: "medium",
+    realImpact: 5
+  }))
+
+].filter(Boolean),
+
+  recommendations: generateDynamicFixes(analysis).map(fix => ({
+    title: fix.issue,
+    steps: [fix.fix, fix.proTip]
+  })),
 
   referenceAnalysis,
   ai,
@@ -497,22 +624,51 @@ error:"Upload failed"
 
 app.post("/analyze", upload.single("file"), async (req, res) => {
   try {
+
     console.log("🔥 HIT /analyze")
 
-    console.log("FILE:", req.file)
-
     if (!req.file) {
-      console.log("❌ NO FILE RECEIVED")
       return res.status(400).json({ error: "No file uploaded" })
     }
 
-    console.log("FILE PATH:", req.file.path)
+    // 🔥 TEMP ANALYSIS (så allt funkar direkt)
+    const analysis = {
+      lufs: -12,
+      dynamicRange: 8,
+      stereoWidth: 0.6,
+      lowEnergy: 0.5,
+      highEnergy: 0.25
+    }
 
-    return res.json({ success: true })
+    const full = generateFullAnalysis(analysis)
+    const fixes = generateDynamicFixes(analysis)
+
+    res.json({
+      mixQuality: full.score ?? 0,
+
+      issues: full.feedback.map((f, i) => ({
+        text: f,
+        level: i === 0 ? "high" : "medium",
+        realImpact: 5
+      })),
+
+      recommendations: fixes.map(fix => ({
+        title: fix.issue,
+        steps: [fix.fix, fix.proTip]
+      })),
+
+      lufs: analysis.lufs ?? -12,
+      dynamicRange: analysis.dynamicRange ?? 8,
+      stereoWidth: analysis.stereoWidth ?? 0.5,
+
+      bassWeight: analysis.lowEnergy,
+      brightness: analysis.highEnergy,
+      energy: 0.7
+    })
 
   } catch (err) {
-    console.error("❌ ERROR:", err)
-    res.status(500).json({ error: "server crash" })
+    console.error(err)
+    res.status(500).json({ error: "Analyze failed" })
   }
 })
 
@@ -533,7 +689,7 @@ if(lufs > -9){
   issueText = `Mix too loud (${Math.round(lufs)} LUFS)`
 }
 else if(lufs < -16){
-  issueText = `Low energy mix`
+  issueText = "Low output level"
 }
 else{
   issueText = "Well balanced mix"
@@ -685,7 +841,7 @@ app.get("/test", (req, res) => {
   res.send("TEST OK")
 })
 
-const PORT = process.env.PORT
+const PORT = process.env.PORT || 3001
 
 
 // 🔥 VIKTIG: snabb health response innan allt annat
