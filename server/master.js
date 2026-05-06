@@ -6,7 +6,7 @@ import { analyzeTrack } from "./analyze.js"
 
 import ffmpegPath from "ffmpeg-static"
 
-ffmpeg.setFfmpegPath("/usr/bin/ffmpeg")
+ffmpeg.setFfmpegPath(ffmpegPath)
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
