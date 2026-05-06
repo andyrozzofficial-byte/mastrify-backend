@@ -19,6 +19,7 @@ import { masterTrack } from "./master.js"
 // import { aiMixAssistant } from "./ai.js"
 // import { buildMasteringChain } from "./masteringEngine.js"
 
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
@@ -514,7 +515,7 @@ UPLOAD TRACK
 
 app.post(
 "/upload",
-upload.single("track"),
+upload.single("file"),
 async (req,res)=>{
 
 try {
@@ -864,16 +865,19 @@ function generateDynamicFixes(analysis){
 MASTER TRACK
 */
 
-app.post("/master",
-  upload.single("track"),
-  async (req, res) => {
+app.post("/master", upload.single("file"), async (req, res) => {
 
   console.log("🔥 MASTER ROUTE HIT")
+  console.log("FILE:", req.file)
+
+  if (!req.file) {
+    return res.status(400).json({ error: "No file received" })
+  }
 
   return res.json({
-    success: true
+    success: true,
+    file: req.file.filename
   })
-
 })
 
 
