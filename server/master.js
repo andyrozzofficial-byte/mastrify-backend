@@ -88,10 +88,7 @@ const target = referenceAnalysis?.spectral || {
   console.log("🎧 ANALYSIS:", analysis)
   console.log("SPECTRAL:", analysis.spectral)
 
-  let filters = [
-  "highpass=f=30",
-  "volume=2"
-]
+  let filters = []
 
 // 🔥 FIX: rensa bort skräp som inte är riktiga filters
 
@@ -105,7 +102,7 @@ const target = referenceAnalysis?.spectral || {
   console.log("📂 OUTPUT PATH:", outputPath)
 
   ffmpeg(input)
-    .audioFilters(filters.join(","))
+    // .audioFilters(filters.join(","))
     .audioCodec("pcm_s24le")
     .audioFrequency(44100)
     .audioChannels(2)
