@@ -107,12 +107,14 @@ const target = referenceAnalysis?.spectral || {
   console.log("UPLOAD DIR:", fs.readdirSync("/tmp/uploads"))
   console.log("OUTPUT EXISTS BEFORE:", fs.existsSync(outputPath))
     
-  ffmpeg(input)
+  ffmpeg()
+  .input(input)
+  .inputOptions(["-f wav"])
   .audioCodec("pcm_s24le")
   .audioFrequency(44100)
   .audioChannels(2)
   .format("wav")
-  .outputOptions("-y") // 🔥 VIKTIG
+  .outputOptions("-y")
   .output(outputPath)
 
     .on("start", (cmd) => {
