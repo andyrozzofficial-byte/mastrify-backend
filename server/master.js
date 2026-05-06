@@ -138,7 +138,7 @@ filters.push("equalizer=f=14000:t=q:w=1:g=0.15")
 filters.push("equalizer=f=10000:t=q:w=1:g=0.3")
 
 // 🎧 EXCITER (sänkt)
-filters.push("highshelf=f=8000:g=2")
+filters.push("equalizer=f=8000:t=q:w=1:g=2")
 filters.push("acompressor=threshold=-20dB:ratio=1.5:attack=5:release=50")
 
 // 🎧 DE-ESS (fake via EQ)
