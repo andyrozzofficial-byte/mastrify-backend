@@ -865,20 +865,39 @@ function generateDynamicFixes(analysis){
 MASTER TRACK
 */
 
-app.post("/master", upload.single("file"), async (req, res) => {
+app.post(
+  "/master",
+  upload.single("file"),
+  async (req, res) => {
 
-  console.log("🔥 MASTER ROUTE HIT")
-  console.log("FILE:", req.file)
+    try {
 
-  if (!req.file) {
-    return res.status(400).json({ error: "No file received" })
+      if (!req.file) {
+        return res.status(400).json({ error: "No file received" })
+      }
+
+      const inputPath = req.file.path
+      const outputName = "master_" + Date.now() + ".wav"
+      const outputPath = "/tmp/masters/" + outputName
+
+      await masterTrack({
+        file: inputPath,
+        output: outputPath
+      })
+
+      return res.json({
+        success: true,
+        file: outputName,
+        url: `/masters/${outputName}`
+      })
+
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: "Master failed" })
+    }
+
   }
-
-  return res.json({
-    success: true,
-    file: req.file.filename
-  })
-})
+)
 
 
 
