@@ -119,9 +119,9 @@ const target = referenceAnalysis?.spectral || {
       console.log("🚀 FFMPEG CMD:", cmd)
     })
 
-    .on("stderr", (line) => {
-      console.log("📢 FFMPEG LOG:", line)
-    })
+    // .on("stderr", (line) => {
+      // console.log("📢 FFMPEG LOG:", line)
+   //})
 
     .on("end", () => {
       console.log("✅ CLEAN MASTER DONE")
