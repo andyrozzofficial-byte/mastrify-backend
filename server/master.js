@@ -151,7 +151,7 @@ filters.push("equalizer=f=7500:t=q:w=1:g=-0.5")
 filters.push("volume=3")
 
 // LIMITER (ALLTID SIST)
-filters.push("alimiter=limit=0.92")
+// filters.push("alimiter=limit=0.92")
 
 // 🔥 FIX: rensa bort skräp som inte är riktiga filters
 
