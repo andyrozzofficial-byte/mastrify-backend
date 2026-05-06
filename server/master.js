@@ -105,14 +105,15 @@ const target = referenceAnalysis?.spectral || {
   console.log("FILE EXISTS:", fs.existsSync(input))
   console.log("FILE SIZE:", fs.statSync(input).size)
   console.log("UPLOAD DIR:", fs.readdirSync("/tmp/uploads"))
-
+  console.log("OUTPUT EXISTS BEFORE:", fs.existsSync(outputPath))
+    
   ffmpeg(input)
-    // .audioFilters(filters.join(","))
-    .audioCodec("pcm_s24le")
-    .audioFrequency(44100)
-    .audioChannels(2)
-    .format("wav")
-    .output(outputPath)
+  .audioCodec("pcm_s24le")
+  .audioFrequency(44100)
+  .audioChannels(2)
+  .format("wav")
+  .outputOptions("-y") // 🔥 VIKTIG
+  .output(outputPath)
 
     .on("start", (cmd) => {
       console.log("🚀 FFMPEG CMD:", cmd)
