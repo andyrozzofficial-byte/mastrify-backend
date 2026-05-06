@@ -81,85 +81,14 @@ const target = referenceAnalysis?.spectral || {
   console.log("🎧 ANALYSIS:", analysis)
   console.log("SPECTRAL:", analysis.spectral)
 
-  let filters = []
-
-/* CLEAN */
-filters.push("highpass=f=30")
-
-/* LOW END (tightare, mindre boom) */
-filters.push("equalizer=f=90:t=q:w=1:g=0.3")
-
-/* REMOVE MUD */
-filters.push("equalizer=f=300:t=q:w=1:g=-1.2")
-
-// 🧠 REFERENCE MATCH CALC
-const spectral = analysis.spectral || {
-  low: 0.2,
-  mid: 0.2,
-  high: 0.2
-}
-
-const diffLow = target.low - spectral.low
-const diffMid = target.mid - spectral.mid
-const diffHigh = target.high - spectral.high
-
-const clamp = (val, min, max) => Math.max(min, Math.min(max, val))
-
-// 🎧 LOW
-if (Math.abs(diffLow) > 0.02) {
-  const gain = clamp(diffLow * 10, -2, 2)
-  filters.push(`equalizer=f=80:t=q:w=1:g=${gain}`)
-}
-
-// 🎧 MID
-if (Math.abs(diffMid) > 0.02) {
-  const gain = clamp(diffMid * 8, -2, 2)
-  filters.push(`equalizer=f=1000:t=q:w=1:g=${gain}`)
-}
-
-// 🎧 HIGH (lite mildare nu)
-if (Math.abs(diffHigh) > 0.02) {
-  const gain = clamp(diffHigh * 6, -1.5, 1.5)
-  filters.push(`equalizer=f=8000:t=q:w=1:g=${gain}`)
-}
-
-
-// 🎧 LOW TIGHT
-filters.push("equalizer=f=60:t=q:w=1:g=0.3")
-
-// 🎧 PRESENCE
-filters.push("equalizer=f=3000:t=q:w=1:g=0.8")
-
-// 🎧 AIR (MYCKET mildare)
-filters.push("equalizer=f=12000:t=q:w=1:g=0.1")
-filters.push("equalizer=f=14000:t=q:w=1:g=0.15")
-
-// 🔥 NY (RADIO SHINE)
-filters.push("equalizer=f=10000:t=q:w=1:g=0.3")
-
-// 🎧 EXCITER (sänkt)
-filters.push("equalizer=f=8000:t=q:w=1:g=1")
-// filters.push("acompressor=threshold=-20dB:ratio=1.5:attack=5:release=50")
-
-// 🎧 DE-ESS (fake via EQ)
-filters.push("equalizer=f=7500:t=q:w=1:g=-0.5")
-
-// PRE-LIMITER CONTROL
-// filters.push("acompressor=threshold=-8dB:ratio=2:attack=10:release=80")
-
-// DRIVE
-filters.push("volume=3dB")
-
-// LIMITER (ALLTID SIST)
-// filters.push("alimiter=limit=0.92")
+  let filters = [
+  "highpass=f=30,volume=2"
+]
 
 // 🔥 FIX: rensa bort skräp som inte är riktiga filters
 
-filters = filters.filter(f => typeof f === "string" && f.includes("="))
-
   console.log("⚙️ FILTERS:", filters)
 
-  filters = filters.filter(f => typeof f === "string")
 
   return new Promise((resolve, reject) => {
 
