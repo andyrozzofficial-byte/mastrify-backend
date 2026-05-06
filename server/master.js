@@ -105,7 +105,7 @@ const target = referenceAnalysis?.spectral || {
   console.log("📂 OUTPUT PATH:", outputPath)
 
   ffmpeg(input)
-    .audioFilters(filters)
+    .audioFilters(filters.join(","))
     .audioCodec("pcm_s24le")
     .audioFrequency(44100)
     .audioChannels(2)
