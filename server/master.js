@@ -148,10 +148,10 @@ filters.push("equalizer=f=7500:t=q:w=1:g=-0.5")
 filters.push("acompressor=threshold=-8dB:ratio=2:attack=10:release=80")
 
 // DRIVE
-filters.push("volume=5dB")
+filters.push("volume=3dB")
 
 // LIMITER (ALLTID SIST)
-filters.push("loudnorm=I=-9:TP=-1.0:LRA=7")
+filters.push("alimiter=limit=0.92")
 
 
 
