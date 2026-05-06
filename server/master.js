@@ -87,10 +87,10 @@ const target = referenceAnalysis?.spectral || {
 filters.push("highpass=f=30")
 
 /* LOW END (tightare, mindre boom) */
-filters.push("equalizer=f=90:width_type=h:width=1:g=0.3")
+filters.push("equalizer=f=90:width=1:g=0.3")
 
 /* REMOVE MUD */
-filters.push("equalizer=f=300:width_type=h:width=1:g=-1.2")
+filters.push("equalizer=f=300:width=1:g=-1.2")
 
 // 🧠 REFERENCE MATCH CALC
 const spectral = analysis.spectral || {
@@ -108,41 +108,41 @@ const clamp = (val, min, max) => Math.max(min, Math.min(max, val))
 // 🎧 LOW
 if (Math.abs(diffLow) > 0.02) {
   const gain = clamp(diffLow * 10, -2, 2)
-  filters.push(`equalizer=f=80:width_type=h:width=1:g=${gain}`)
+  filters.push(`equalizer=f=80:width=1:g=${gain}`)
 }
 
 // 🎧 MID
 if (Math.abs(diffMid) > 0.02) {
   const gain = clamp(diffMid * 8, -2, 2)
-  filters.push(`equalizer=f=1000:width_type=h:width=1:g=${gain}`)
+  filters.push(`equalizer=f=1000:width=1:g=${gain}`)
 }
 
 // 🎧 HIGH (lite mildare nu)
 if (Math.abs(diffHigh) > 0.02) {
   const gain = clamp(diffHigh * 6, -1.5, 1.5)
-  filters.push(`equalizer=f=8000:width_type=h:width=1:g=${gain}`)
+  filters.push(`equalizer=f=8000:width=1:g=${gain}`)
 }
 
 
 // 🎧 LOW TIGHT
-filters.push("equalizer=f=60:width_type=h:width=1:g=0.3")
+filters.push("equalizer=f=60:width=1:g=0.3")
 
 // 🎧 PRESENCE
-filters.push("equalizer=f=3000:width_type=h:width=1:g=0.8")
+filters.push("equalizer=f=3000:width=1:g=0.8")
 
 // 🎧 AIR (MYCKET mildare)
-filters.push("equalizer=f=12000:width_type=h:width=1:g=0.1")
-filters.push("equalizer=f=14000:width_type=h:width=1:g=0.15")
+filters.push("equalizer=f=12000:width=1:g=0.1")
+filters.push("equalizer=f=14000:width=1:g=0.15")
 
 // 🔥 NY (RADIO SHINE)
-filters.push("equalizer=f=10000:width_type=h:width=1:g=0.3")
+filters.push("equalizer=f=10000:width=1:g=0.3")
 
 // 🎧 EXCITER (sänkt)
-filters.push("equalizer=f=8000:width_type=h:width=1:g=2")
+filters.push("equalizer=f=8000:width=1:g=2")
 // filters.push("acompressor=threshold=-20dB:ratio=1.5:attack=5:release=50")
 
 // 🎧 DE-ESS (fake via EQ)
-filters.push("equalizer=f=7500:width_type=h:width=1:g=-0.5")
+filters.push("equalizer=f=7500:width=1:g=-0.5")
 
 // PRE-LIMITER CONTROL
 // filters.push("acompressor=threshold=-8dB:ratio=2:attack=10:release=80")
