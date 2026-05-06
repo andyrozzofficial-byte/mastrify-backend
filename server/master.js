@@ -107,10 +107,9 @@ const target = referenceAnalysis?.spectral || {
   console.log("UPLOAD DIR:", fs.readdirSync("/tmp/uploads"))
   console.log("OUTPUT EXISTS BEFORE:", fs.existsSync(outputPath))
     
-  ffmpeg()
-  .input(input)
+  ffmpeg(input)
   .inputOptions(["-f wav"])
-  .audioCodec("pcm_s24le")
+  .audioCodec("pcm_s16le") // 🔥 ändra från s24le
   .audioFrequency(44100)
   .audioChannels(2)
   .format("wav")
