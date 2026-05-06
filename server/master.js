@@ -89,7 +89,8 @@ const target = referenceAnalysis?.spectral || {
   console.log("SPECTRAL:", analysis.spectral)
 
   let filters = [
-  "highpass=f=30,volume=2"
+  "highpass=f=30",
+  "volume=2"
 ]
 
 // 🔥 FIX: rensa bort skräp som inte är riktiga filters
