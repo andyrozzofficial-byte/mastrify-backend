@@ -139,13 +139,13 @@ filters.push("equalizer=f=10000:t=q:w=1:g=0.3")
 
 // 🎧 EXCITER (sänkt)
 filters.push("equalizer=f=8000:t=q:w=1:g=2")
-filters.push("acompressor=threshold=-20dB:ratio=1.5:attack=5:release=50")
+// filters.push("acompressor=threshold=-20dB:ratio=1.5:attack=5:release=50")
 
 // 🎧 DE-ESS (fake via EQ)
 filters.push("equalizer=f=7500:t=q:w=1:g=-0.5")
 
 // PRE-LIMITER CONTROL
-filters.push("acompressor=threshold=-8dB:ratio=2:attack=10:release=80")
+// filters.push("acompressor=threshold=-8dB:ratio=2:attack=10:release=80")
 
 // DRIVE
 filters.push("volume=3dB")
