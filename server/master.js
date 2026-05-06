@@ -187,10 +187,11 @@ filters.push("alimiter=limit=0.92")
     })
 
     .on("error", err => {
-      console.log("💥 FFMPEG CRASH:")
-      console.log(err)
-      reject(err)
-    })
+  console.log("💥 FFMPEG CRASH:")
+  console.log(err.message)
+  console.log(err.stack)
+  reject(err)
+})
 
     .run()
 })
