@@ -153,7 +153,9 @@ filters.push("volume=3dB")
 // LIMITER (ALLTID SIST)
 filters.push("alimiter=limit=0.92")
 
+// 🔥 FIX: rensa bort skräp som inte är riktiga filters
 
+filters = filters.filter(f => typeof f === "string" && f.includes("="))
 
   console.log("⚙️ FILTERS:", filters)
 
