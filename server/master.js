@@ -101,6 +101,11 @@ const target = referenceAnalysis?.spectral || {
   console.log("📂 INPUT PATH:", input)
   console.log("📂 OUTPUT PATH:", outputPath)
 
+  // 👇 HÄR EXAKT
+  console.log("FILE EXISTS:", fs.existsSync(input))
+  console.log("FILE SIZE:", fs.statSync(input).size)
+  console.log("UPLOAD DIR:", fs.readdirSync("/tmp/uploads"))
+
   ffmpeg(input)
     // .audioFilters(filters.join(","))
     .audioCodec("pcm_s24le")
