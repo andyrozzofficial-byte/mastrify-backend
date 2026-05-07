@@ -184,6 +184,9 @@ filters.push("alimiter=limit=0.92")
         console.log("🚀 FFMPEG START:", cmd)
         cmdRef = command
       })
+      .on("stderr", (line) => {
+        console.log("FFMPEG STDERR:", line)
+      })
 
       .on("end", () => {
         if (settled) return
