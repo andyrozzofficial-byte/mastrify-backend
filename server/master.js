@@ -139,7 +139,6 @@ filters.push("equalizer=f=14000:t=q:w=1:g=0.15")
 filters.push("equalizer=f=10000:t=q:w=1:g=0.3")
 
 // 🎧 EXCITER (sänkt)
-filters.push("aexciter=amount=0.4")
 
 // 🎧 DE-ESS (fake via EQ)
 filters.push("equalizer=f=7500:t=q:w=1:g=-0.5")
