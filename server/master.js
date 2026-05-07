@@ -1,26 +1,21 @@
 import ffmpeg from "fluent-ffmpeg"
-import ffmpegPath from "ffmpeg-static"
+import ffmpegStatic from "ffmpeg-static"
 import path from "path"
 import fs from "fs"
 import { fileURLToPath } from "url"
 import { analyzeTrack } from "./analyze.js"
 
-
-ffmpeg.setFfmpegPath(ffmpegPath)
-
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+// Ensure ffmpeg binary exists in deployments (e.g. Railway)
+if (ffmpegStatic) {
+  ffmpeg.setFfmpegPath(ffmpegStatic)
+}
 
 
 const uploadsDir = "/tmp/uploads"
 const mastersDir = "/tmp/masters"
-
-// 🔥 FIX: skapa uploads
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true })
-}
-
-// 🔥 FIX: skapa masters
 if (!fs.existsSync(mastersDir)) {
   fs.mkdirSync(mastersDir, { recursive: true })
 }
@@ -90,47 +85,130 @@ const target = referenceAnalysis?.spectral || {
 
   let filters = []
 
-// 🔥 FIX: rensa bort skräp som inte är riktiga filters
+/* CLEAN */
+filters.push("highpass=f=30")
+
+/* LOW END (tightare, mindre boom) */
+filters.push("equalizer=f=90:t=q:w=1:g=0.3")
+
+/* REMOVE MUD */
+filters.push("equalizer=f=300:t=q:w=1:g=-1.2")
+
+// 🧠 REFERENCE MATCH CALC
+const spectral = analysis.spectral || {
+  low: 0.2,
+  mid: 0.2,
+  high: 0.2
+}
+
+const diffLow = target.low - spectral.low
+const diffMid = target.mid - spectral.mid
+const diffHigh = target.high - spectral.high
+
+const clamp = (val, min, max) => Math.max(min, Math.min(max, val))
+
+// 🎧 LOW
+if (Math.abs(diffLow) > 0.02) {
+  const gain = clamp(diffLow * 10, -2, 2)
+  filters.push(`equalizer=f=80:t=q:w=1:g=${gain}`)
+}
+
+// 🎧 MID
+if (Math.abs(diffMid) > 0.02) {
+  const gain = clamp(diffMid * 8, -2, 2)
+  filters.push(`equalizer=f=1000:t=q:w=1:g=${gain}`)
+}
+
+// 🎧 HIGH (lite mildare nu)
+if (Math.abs(diffHigh) > 0.02) {
+  const gain = clamp(diffHigh * 6, -1.5, 1.5)
+}
+
+
+// 🎧 LOW TIGHT
+filters.push("equalizer=f=60:t=q:w=1:g=0.3")
+
+// 🎧 PRESENCE
+filters.push("equalizer=f=3000:t=q:w=1:g=0.8")
+
+// 🎧 AIR (MYCKET mildare)
+filters.push("equalizer=f=12000:t=q:w=1:g=0.1")
+filters.push("equalizer=f=14000:t=q:w=1:g=0.15")
+
+// 🔥 NY (RADIO SHINE)
+filters.push("equalizer=f=10000:t=q:w=1:g=0.3")
+
+// 🎧 EXCITER (sänkt)
+filters.push("aexciter=amount=0.4")
+
+// 🎧 DE-ESS (fake via EQ)
+filters.push("equalizer=f=7500:t=q:w=1:g=-0.5")
+
+// PRE-LIMITER CONTROL
+filters.push("acompressor=threshold=-8dB:ratio=2:attack=10:release=80")
+
+// DRIVE
+filters.push("volume=8.5dB")
+
+// LIMITER (ALLTID SIST)
+filters.push("alimiter=limit=0.92")
+
+
 
   console.log("⚙️ FILTERS:", filters)
 
-
   return new Promise((resolve, reject) => {
+    let settled = false
+    let cmdRef = null
 
-  console.log("🔥 START MASTER")
-  console.log("📂 INPUT PATH:", input)
-  console.log("📂 OUTPUT PATH:", outputPath)
+    const timeoutId = setTimeout(() => {
+      if (settled) return
+      settled = true
+      console.log("⏱️ FFMPEG TIMEOUT")
+      try {
+        cmdRef?.kill("SIGKILL")
+      } catch (e) {
+        // ignore kill errors
+      }
+      reject(new Error("Mastering timed out"))
+    }, 60_000)
 
-  // 👇 HÄR EXAKT
-  console.log("FILE EXISTS:", fs.existsSync(input))
-  console.log("FILE SIZE:", fs.statSync(input).size)
-  console.log("UPLOAD DIR:", fs.readdirSync("/tmp/uploads"))
-  console.log("OUTPUT EXISTS BEFORE:", fs.existsSync(outputPath))
-    
+    const command = ffmpeg(input)
+      .audioFilters(filters)
+      .audioCodec("pcm_s16le")
+      .audioFrequency(44100)
+      .audioChannels(2)
+      .format("wav")
+      .output(outputPath)
+      .on("start", (cmd) => {
+        console.log("🚀 FFMPEG START:", cmd)
+        cmdRef = command
+      })
 
-return new Promise((resolve, reject) => {
+      .on("end", () => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeoutId)
+        console.log("✅ FFMPEG END")
+        if (!fs.existsSync(outputPath)) {
+          return reject(new Error("Master completed but output file missing"))
+        }
+        resolve({
+  path: outputPath
+})
+      })
 
-  const cmd = `ffmpeg -y -i "${input}" -ar 44100 -ac 2 -c:a pcm_s16le "${outputPath}"`
+      .on("error", err => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeoutId)
+        console.log("❌ FFMPEG ERROR:", err)
+        reject(err)
+      })
 
-  console.log("🚀 RUNNING:", cmd)
+    cmdRef = command
+    command.run()
 
-  exec(cmd, (error, stdout, stderr) => {
-
-    console.log("STDOUT:", stdout)
-    console.log("STDERR:", stderr)
-
-    if (error) {
-      console.log("💥 FFMPEG ERROR:", error.message)
-      return reject(error)
-    }
-
-    console.log("✅ DONE")
-
-    resolve({
-      path: outputPath
-    })
   })
-})
-})
 
 }
