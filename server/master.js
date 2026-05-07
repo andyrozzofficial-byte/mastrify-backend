@@ -107,38 +107,30 @@ const target = referenceAnalysis?.spectral || {
   console.log("UPLOAD DIR:", fs.readdirSync("/tmp/uploads"))
   console.log("OUTPUT EXISTS BEFORE:", fs.existsSync(outputPath))
     
-  ffmpeg(input)
-  .inputOptions(["-f wav"])
-  .audioCodec("pcm_s16le") // 🔥 ändra från s24le
-  .audioFrequency(44100)
-  .audioChannels(2)
-  .format("wav")
-  .outputOptions("-y")
-  .output(outputPath)
 
-    .on("start", (cmd) => {
-      console.log("🚀 FFMPEG CMD:", cmd)
+return new Promise((resolve, reject) => {
+
+  const cmd = `ffmpeg -y -i "${input}" -ar 44100 -ac 2 -c:a pcm_s16le "${outputPath}"`
+
+  console.log("🚀 RUNNING:", cmd)
+
+  exec(cmd, (error, stdout, stderr) => {
+
+    console.log("STDOUT:", stdout)
+    console.log("STDERR:", stderr)
+
+    if (error) {
+      console.log("💥 FFMPEG ERROR:", error.message)
+      return reject(error)
+    }
+
+    console.log("✅ DONE")
+
+    resolve({
+      path: outputPath
     })
-
-    // .on("stderr", (line) => {
-      // console.log("📢 FFMPEG LOG:", line)
-   //})
-
-    .on("end", () => {
-      console.log("✅ CLEAN MASTER DONE")
-      resolve({
-        path: outputPath
-      })
-    })
-
-    .on("error", err => {
-  console.log("💥 FFMPEG CRASH:")
-  console.log(err.message)
-  console.log(err.stack)
-  reject(err)
+  })
 })
-
-    .run()
 })
 
 }
