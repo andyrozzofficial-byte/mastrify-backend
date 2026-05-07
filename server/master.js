@@ -83,23 +83,10 @@ const target = referenceAnalysis?.spectral || {
   console.log("🎧 ANALYSIS:", analysis)
   console.log("SPECTRAL:", analysis.spectral)
 
-  // DEBUG: brutally obvious chain to verify processing
   const filters = [
-    // make it immediately audible that filters apply
     "highpass=f=200",
-
-    // extreme EQ swings
-    "equalizer=f=80:t=q:w=1:g=12",
-    "equalizer=f=3500:t=q:w=1:g=10",
-    "equalizer=f=12000:t=q:w=1:g=12",
-
-    // smash dynamics hard
-    // use only widely supported options (avoid makeup param)
-    "acompressor=threshold=-35dB:ratio=20:attack=1:release=50",
-
-    // push into limiter
-    "volume=20dB",
-    "alimiter=limit=0.25",
+    "lowpass=f=4000",
+    "volume=15dB"
   ]
 
   console.log("USING TEST MASTER CHAIN")
