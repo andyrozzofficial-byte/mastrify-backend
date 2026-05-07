@@ -55,6 +55,13 @@ console.log("OUTPUT:", outputPath)
     throw new Error("Input file not found")
   }
 
+  // TEMP: bypass ffmpeg mastering entirely to ensure /master returns reliably
+  fs.copyFileSync(input, outputPath)
+  if (!fs.existsSync(outputPath)) {
+    throw new Error("Copy failed: output file missing")
+  }
+  return { path: outputPath }
+
   const analysis = await analyzeTrack(input)
 
   let referenceAnalysis = null
@@ -139,6 +146,7 @@ filters.push("equalizer=f=14000:t=q:w=1:g=0.15")
 filters.push("equalizer=f=10000:t=q:w=1:g=0.3")
 
 // 🎧 EXCITER (sänkt)
+filters.push("aexciter=amount=0.4")
 
 // 🎧 DE-ESS (fake via EQ)
 filters.push("equalizer=f=7500:t=q:w=1:g=-0.5")
