@@ -94,7 +94,8 @@ const target = referenceAnalysis?.spectral || {
     "equalizer=f=12000:t=q:w=1:g=12",
 
     // smash dynamics hard
-    "acompressor=threshold=-35dB:ratio=20:attack=1:release=50:makeup=20",
+    // use only widely supported options (avoid makeup param)
+    "acompressor=threshold=-35dB:ratio=20:attack=1:release=50",
 
     // push into limiter
     "volume=20dB",
