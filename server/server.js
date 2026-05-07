@@ -885,10 +885,14 @@ app.post(
         output: outputPath
       })
 
+      const after = `/masters/${outputName}`
+      const afterUrl = `https://mastrify-backend-production.up.railway.app${after}`
+
       return res.json({
         success: true,
         file: outputName,
-        url: `/masters/${outputName}`
+        after,
+        afterUrl
       })
 
     } catch (err) {
