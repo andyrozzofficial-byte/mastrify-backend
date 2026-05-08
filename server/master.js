@@ -67,7 +67,11 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
       reject(new Error("Mastering timed out"))
     }, 60_000)
 
-    const proc = ffmpeg(input)
+    console.log("INPUT EXISTS:", fs.existsSync(input))
+    console.log("INPUT SIZE:", fs.statSync(input).size)
+
+    const proc = ffmpeg()
+      .input(input)
       .audioCodec("pcm_s16le")
       .format("wav")
       .on("start", (cmd) => {
