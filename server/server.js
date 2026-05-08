@@ -905,8 +905,19 @@ app.post(
         output: outputPath
       })
 
+      const wavExists = fs.existsSync(outputPath)
+      console.log("MASTER WAV EXISTS BEFORE RESPONSE:", wavExists, outputPath)
+      if (!wavExists) {
+        throw new Error("Master WAV missing before response")
+      }
+
       const after = `/masters/${outputName}`
-      const afterUrl = `https://mastrify-backend-production.up.railway.app${after}`
+      const xfProto = (req.headers["x-forwarded-proto"] || "").toString().split(",")[0].trim()
+      const proto = xfProto || req.protocol
+      const host = (req.headers["x-forwarded-host"] || req.get("host") || "").toString()
+      const baseUrl = `${proto}://${host}`
+      const afterUrl = `${baseUrl}${after}`
+      console.log("MASTER WAV URL:", afterUrl)
 
       // iOS fallback: generate MP3 preview clip (60s–90s) from the mastered WAV
       const previewName = outputName.replace(/\.wav$/i, "_preview.mp3")
@@ -962,7 +973,7 @@ app.post(
       }
 
       const previewAfterMp3 = `/masters/${previewName}`
-      const previewAfterMp3Url = `https://mastrify-backend-production.up.railway.app${previewAfterMp3}`
+      const previewAfterMp3Url = `${baseUrl}${previewAfterMp3}`
 
       return res.json({
         success: true,
