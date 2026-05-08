@@ -1,5 +1,6 @@
 import ffmpeg from "fluent-ffmpeg"
 import ffmpegStatic from "ffmpeg-static"
+import ffprobePath from "ffprobe-static"
 import path from "path"
 import fs from "fs"
 import { fileURLToPath } from "url"
@@ -11,6 +12,11 @@ const __dirname = path.dirname(__filename)
 // Ensure ffmpeg binary exists in deployments (e.g. Railway)
 if (ffmpegStatic) {
   ffmpeg.setFfmpegPath(ffmpegStatic)
+}
+
+// Ensure ffprobe binary exists in deployments (e.g. Railway)
+if (ffprobePath?.path) {
+  ffmpeg.setFfprobePath(ffprobePath.path)
 }
 
 
