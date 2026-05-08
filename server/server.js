@@ -1,10 +1,12 @@
 import { exec } from "child_process"
+import { spawn } from "child_process"
 import express from "express"
 import cors from "cors"
 import multer from "multer"
 import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
+import ffmpegPath from "ffmpeg-static"
 
 process.on("uncaughtException", (err) => {
   console.error("💥 UNCAUGHT:", err)
@@ -68,7 +70,12 @@ app.get("/masters/:file", (req, res) => {
     return res.status(404).send("File not found")
   }
 
-  res.setHeader("Content-Type", "audio/wav")
+  const ext = path.extname(req.params.file).toLowerCase()
+  if (ext === ".mp3") {
+    res.setHeader("Content-Type", "audio/mpeg")
+  } else {
+    res.setHeader("Content-Type", "audio/wav")
+  }
   res.setHeader("Accept-Ranges", "bytes")
   if (req.query.download === "1") {
     res.setHeader(
@@ -901,11 +908,64 @@ app.post(
       const after = `/masters/${outputName}`
       const afterUrl = `https://mastrify-backend-production.up.railway.app${after}`
 
+      // iOS fallback: generate MP3 preview from the mastered WAV
+      const previewName = outputName.replace(/\.wav$/i, "_preview.mp3")
+      const previewPath = "/tmp/masters/" + previewName
+
+      try {
+        console.log("GENERATING MP3 PREVIEW:", previewPath)
+        if (ffmpegPath) {
+          try {
+            fs.chmodSync(ffmpegPath, 0o755)
+          } catch (e) {
+            console.log("CHMOD ERROR (preview):", e?.message || e)
+          }
+        }
+
+        await new Promise((resolve, reject) => {
+          const args = [
+            "-y",
+            "-i",
+            outputPath,
+            "-vn",
+            "-ar",
+            "44100",
+            "-ac",
+            "2",
+            "-b:a",
+            "320k",
+            "-c:a",
+            "libmp3lame",
+            "-f",
+            "mp3",
+            previewPath,
+          ]
+
+          console.log("SPAWN FFMPEG (MP3 PREVIEW):", ffmpegPath, args)
+          const ff = spawn(ffmpegPath, args, { shell: false })
+          ff.stderr.on("data", (d) => console.log("FFMPEG PREVIEW STDERR:", d.toString()))
+          ff.stdout.on("data", (d) => console.log("FFMPEG PREVIEW STDOUT:", d.toString()))
+          ff.on("close", (code) => {
+            console.log("FFMPEG PREVIEW EXIT CODE:", code)
+            if (code === 0) resolve(null)
+            else reject(new Error("mp3 preview ffmpeg failed"))
+          })
+          ff.on("error", (err) => reject(err))
+        })
+      } catch (e) {
+        console.log("MP3 PREVIEW FAILED:", e?.message || e)
+      }
+
+      const previewAfterMp3 = `/masters/${previewName}`
+      const previewAfterMp3Url = `https://mastrify-backend-production.up.railway.app${previewAfterMp3}`
+
       return res.json({
         success: true,
         file: outputName,
         after,
-        afterUrl
+        afterUrl,
+        previewAfterMp3,
+        previewAfterMp3Url
       })
 
     } catch (err) {
