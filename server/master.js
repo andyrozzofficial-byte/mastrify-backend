@@ -55,7 +55,7 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
   await new Promise((resolve, reject) => {
     let settled = false
     let cmdRef = null
-    const stderrLines = []
+    let stderrLogs = ""
 
     const timeoutId = setTimeout(() => {
       if (settled) return
@@ -75,7 +75,7 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
         cmdRef = proc
       })
       .on("stderr", (line) => {
-        stderrLines.push(line)
+        stderrLogs += line + "\n"
         console.log("FFMPEG STDERR:", line)
       })
       .on("end", () => {
@@ -83,7 +83,7 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
         settled = true
         clearTimeout(timeoutId)
         console.log("✅ FFMPEG END")
-        console.log("FFMPEG STDERR FULL:\n", stderrLines.join("\n"))
+        console.log("FFMPEG STDERR FULL:\n", stderrLogs)
         if (!fs.existsSync(outputPath)) {
           return reject(new Error("Master completed but output file missing"))
         }
@@ -94,7 +94,7 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
         settled = true
         clearTimeout(timeoutId)
         console.log("❌ FFMPEG ERROR:", err)
-        console.log("FFMPEG STDERR FULL:\n", stderrLines.join("\n"))
+        console.log("FULL STDERR:\n", stderrLogs)
         reject(err)
       })
 
