@@ -70,6 +70,12 @@ app.get("/masters/:file", (req, res) => {
 
   res.setHeader("Content-Type", "audio/wav")
   res.setHeader("Accept-Ranges", "bytes")
+  if (req.query.download === "1") {
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${path.basename(req.params.file)}"`
+    )
+  }
 
   const stream = fs.createReadStream(filePath)
   stream.pipe(res)
