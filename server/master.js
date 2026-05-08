@@ -3,6 +3,7 @@ import ffmpegPath from "ffmpeg-static"
 import ffprobePath from "ffprobe-static"
 import fs from "fs"
 import path from "path"
+import { spawn } from "child_process"
 import { analyzeTrack } from "./analyze.js"
 
 console.log("FFMPEG STATIC PATH:", ffmpegPath)
@@ -86,40 +87,53 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
     console.log("INPUT EXISTS:", fs.existsSync(file))
     console.log("OUTPUT DIR EXISTS:", fs.existsSync("/tmp/masters"))
 
-    const proc = ffmpeg(input)
-      .noVideo()
-      .audioChannels(2)
-      .audioFrequency(44100)
-      .audioCodec("libmp3lame")
-      .audioBitrate("320k")
-      .format("mp3")
-      .on("start", (cmd) => {
-        console.log("FFMPEG START:", cmd)
-        cmdRef = proc
-      })
-      .on("stderr", (line) => {
-        console.log("FFMPEG STDERR:", line)
-      })
-      .on("end", () => {
-        if (settled) return
-        settled = true
-        clearTimeout(timeoutId)
-        console.log("FFMPEG DONE")
-        if (!fs.existsSync(outputPath)) {
-          return reject(new Error("Master completed but output file missing"))
-        }
-        resolve()
-      })
-      .on("error", (err) => {
-        if (settled) return
-        settled = true
-        clearTimeout(timeoutId)
-        console.error("FFMPEG ERROR:", err)
-        reject(err)
-      })
+    const args = [
+      "-y",
+      "-i",
+      file,
+      "-vn",
+      "-ar",
+      "44100",
+      "-ac",
+      "2",
+      "-b:a",
+      "320k",
+      outputPath,
+    ]
 
-    cmdRef = proc
-    proc.save(outputPath)
+    console.log("SPAWN FFMPEG:", ffmpegPath, args)
+
+    const ff = spawn(resolvedFfmpegPath || ffmpegPath, args)
+    cmdRef = ff
+
+    ff.stderr.on("data", (d) => {
+      console.log("FFMPEG STDERR:", d.toString())
+    })
+
+    ff.stdout.on("data", (d) => {
+      console.log("FFMPEG STDOUT:", d.toString())
+    })
+
+    ff.on("close", (code) => {
+      console.log("FFMPEG EXIT CODE:", code)
+      if (settled) return
+      settled = true
+      clearTimeout(timeoutId)
+
+      if (code === 0) {
+        resolve({ path: outputPath })
+      } else {
+        reject(new Error("ffmpeg failed"))
+      }
+    })
+
+    ff.on("error", (err) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeoutId)
+      console.error("SPAWN ERROR:", err)
+      reject(err)
+    })
   })
 
   let referenceAnalysis = null
