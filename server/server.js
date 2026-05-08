@@ -35,11 +35,15 @@ app.options('*', cors())
 
 const SUPABASE_URL = process.env.SUPABASE_URL || ""
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-const SUPABASE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "masters"
+// Support both names; Railway env should use SUPABASE_BUCKET per our convention
+const SUPABASE_BUCKET =
+  process.env.SUPABASE_BUCKET ||
+  process.env.SUPABASE_STORAGE_BUCKET ||
+  "masters"
 
 async function uploadToSupabasePublic({ localPath, objectPath, contentType }) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
+    return null
   }
 
   const data = fs.readFileSync(localPath)
@@ -1011,27 +1015,42 @@ app.post(
       const wavObjectPath = `masters/${outputName}`
       const mp3ObjectPath = `previews/${previewName}`
 
-      const finalAfterUrl = await uploadToSupabasePublic({
-        localPath: outputPath,
-        objectPath: wavObjectPath,
-        contentType: "audio/wav",
-      })
-      const previewAfterMp3Url = await uploadToSupabasePublic({
-        localPath: previewPath,
-        objectPath: mp3ObjectPath,
-        contentType: "audio/mpeg",
-      })
+      let finalAfterUrl = null
+      let previewAfterMp3Url = null
+      try {
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+          console.log(
+            "⚠️ SUPABASE STORAGE DISABLED: missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY. Falling back to /masters URLs."
+          )
+        } else {
+          finalAfterUrl = await uploadToSupabasePublic({
+            localPath: outputPath,
+            objectPath: wavObjectPath,
+            contentType: "audio/wav",
+          })
+          previewAfterMp3Url = await uploadToSupabasePublic({
+            localPath: previewPath,
+            objectPath: mp3ObjectPath,
+            contentType: "audio/mpeg",
+          })
+        }
+      } catch (e) {
+        console.log(
+          "⚠️ SUPABASE UPLOAD FAILED. Falling back to /masters URLs.",
+          e?.message || e
+        )
+      }
 
-      // Stable public URLs for clients
-      const previewAfterMp3 = previewAfterMp3Url
+      const responseAfterUrl = finalAfterUrl || afterUrlLocal
+      const responsePreviewMp3Url = previewAfterMp3Url || previewAfterMp3UrlLocal
 
       return res.json({
         success: true,
         file: outputName,
-        after: finalAfterUrl,
-        afterUrl: finalAfterUrl,
-        previewAfterMp3,
-        previewAfterMp3Url
+        after: responseAfterUrl,
+        afterUrl: responseAfterUrl,
+        previewAfterMp3: responsePreviewMp3Url,
+        previewAfterMp3Url: responsePreviewMp3Url
       })
 
     } catch (err) {
