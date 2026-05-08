@@ -908,7 +908,7 @@ app.post(
       const after = `/masters/${outputName}`
       const afterUrl = `https://mastrify-backend-production.up.railway.app${after}`
 
-      // iOS fallback: generate MP3 preview from the mastered WAV
+      // iOS fallback: generate MP3 preview clip (60s–90s) from the mastered WAV
       const previewName = outputName.replace(/\.wav$/i, "_preview.mp3")
       const previewPath = "/tmp/masters/" + previewName
 
@@ -925,6 +925,11 @@ app.post(
         await new Promise((resolve, reject) => {
           const args = [
             "-y",
+            // cut a dedicated 30s preview (avoid iOS MP3 seeking entirely)
+            "-ss",
+            "60",
+            "-t",
+            "30",
             "-i",
             outputPath,
             "-vn",
