@@ -107,6 +107,8 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
       "pcm_s16le",
       "-f",
       "wav",
+      "-af",
+      "loudnorm=I=-10:TP=-1.0:LRA=8,alimiter=limit=0.95",
       outputPath,
     ]
 
