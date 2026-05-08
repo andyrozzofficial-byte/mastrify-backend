@@ -43,7 +43,7 @@ async function uploadToSupabasePublic({ localPath, objectPath, contentType }) {
   }
 
   const data = fs.readFileSync(localPath)
-  const url = `${SUPABASE_URL.replace(/\\/$/, "")}/storage/v1/object/${encodeURIComponent(SUPABASE_BUCKET)}/${objectPath}`
+  const url = `${SUPABASE_URL.replace(/\/$/, "")}/storage/v1/object/${encodeURIComponent(SUPABASE_BUCKET)}/${objectPath}`
 
   const res = await fetch(url, {
     method: "PUT",
@@ -61,7 +61,7 @@ async function uploadToSupabasePublic({ localPath, objectPath, contentType }) {
     throw new Error(`Supabase upload failed (${res.status}): ${text}`)
   }
 
-  const publicUrl = `${SUPABASE_URL.replace(/\\/$/, "")}/storage/v1/object/public/${encodeURIComponent(SUPABASE_BUCKET)}/${objectPath}`
+  const publicUrl = `${SUPABASE_URL.replace(/\/$/, "")}/storage/v1/object/public/${encodeURIComponent(SUPABASE_BUCKET)}/${objectPath}`
   return publicUrl
 }
 
