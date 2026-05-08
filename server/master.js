@@ -72,6 +72,9 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
 
     const proc = ffmpeg()
       .input(input)
+      .noVideo()
+      .audioChannels(2)
+      .audioFrequency(44100)
       .audioCodec("pcm_s16le")
       .format("wav")
       .on("start", (cmd) => {
