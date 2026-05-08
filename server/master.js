@@ -54,9 +54,6 @@ if (!outputPath) {
   throw new Error("❌ Output path missing")
 }
 
-console.log("INPUT:", input)
-console.log("OUTPUT:", outputPath)
-
   if (!fs.existsSync(input)) {
     throw new Error("Input file not found")
   }
@@ -89,93 +86,60 @@ const target = referenceAnalysis?.spectral || {
   console.log("🎧 ANALYSIS:", analysis)
   console.log("SPECTRAL:", analysis.spectral)
 
-  const runFfmpeg = ({ label, filters, outPath }) =>
-    new Promise((resolve, reject) => {
-      let settled = false
-      let cmdRef = null
-      const stderrLines = []
+  console.log("USING MINIMAL FFMPEG EXPORT")
+  console.log("INPUT:", input)
+  console.log("OUTPUT:", outputPath)
 
-      const timeoutId = setTimeout(() => {
+  await new Promise((resolve, reject) => {
+    let settled = false
+    let cmdRef = null
+    const stderrLines = []
+
+    const timeoutId = setTimeout(() => {
+      if (settled) return
+      settled = true
+      console.log("⏱️ FFMPEG TIMEOUT")
+      try {
+        cmdRef?.kill("SIGKILL")
+      } catch (e) {}
+      reject(new Error("Mastering timed out"))
+    }, 60_000)
+
+    const command = ffmpeg(input)
+      .audioCodec("pcm_s16le")
+      .format("wav")
+      .on("start", (cmd) => {
+        console.log("🚀 FFMPEG START:", cmd)
+        cmdRef = command
+      })
+      .on("stderr", (line) => {
+        stderrLines.push(line)
+        console.log("FFMPEG STDERR:", line)
+      })
+      .on("end", () => {
         if (settled) return
         settled = true
-        console.log(`⏱️ FFMPEG TIMEOUT (${label})`)
-        try {
-          cmdRef?.kill("SIGKILL")
-        } catch (e) {}
-        reject(new Error("Mastering timed out"))
-      }, 60_000)
-
-      const command = ffmpeg(input)
-        .audioCodec("pcm_s16le")
-        .audioFrequency(44100)
-        .audioChannels(2)
-        .format("wav")
-        .output(outPath)
-        .on("start", (cmd) => {
-          console.log(`🚀 FFMPEG START (${label}):`, cmd)
-          cmdRef = command
-        })
-        .on("stderr", (line) => {
-          stderrLines.push(line)
-          console.log(`FFMPEG STDERR (${label}):`, line)
-        })
-        .on("end", () => {
-          if (settled) return
-          settled = true
-          clearTimeout(timeoutId)
-          console.log(`✅ FFMPEG END (${label})`)
-          if (!fs.existsSync(outPath)) {
-            return reject(new Error("Master completed but output file missing"))
-          }
-          resolve({ path: outPath, stderrLines })
-        })
-        .on("error", (err) => {
-          if (settled) return
-          settled = true
-          clearTimeout(timeoutId)
-          console.log(`❌ FFMPEG ERROR (${label}):`, err)
-          console.log(`❌ FFMPEG STDERR (last 40) (${label}):`)
-          for (const l of stderrLines.slice(-40)) console.log(l)
-          reject(err)
-        })
-
-      if (filters?.length) {
-        command.audioFilters(filters)
-      }
-
-      cmdRef = command
-      command.run()
-    })
-
-  const filterlessPath = outputPath.replace(/\.wav$/i, ".diag0.wav")
-  const volumeOnlyPath = outputPath.replace(/\.wav$/i, ".diag1.wav")
-
-  try {
-    // 3. Verify input format (best-effort)
-    try {
-      ffmpeg.ffprobe(input, (err, data) => {
-        if (err) return console.log("FFPROBE ERROR:", err.message)
-        console.log("FFPROBE INPUT:", JSON.stringify(data?.format || {}, null, 2))
-        console.log("FFPROBE STREAMS:", JSON.stringify(data?.streams || [], null, 2))
+        clearTimeout(timeoutId)
+        console.log("✅ FFMPEG END")
+        console.log("FFMPEG STDERR FULL:\n", stderrLines.join("\n"))
+        if (!fs.existsSync(outputPath)) {
+          return reject(new Error("Master completed but output file missing"))
+        }
+        resolve()
       })
-    } catch (e) {}
+      .on("error", (err) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeoutId)
+        console.log("❌ FFMPEG ERROR:", err)
+        console.log("FFMPEG STDERR FULL:\n", stderrLines.join("\n"))
+        reject(err)
+      })
 
-    // 5. filterless conversion
-    await runFfmpeg({ label: "filterless", filters: null, outPath: filterlessPath })
+    cmdRef = command
+    command.save(outputPath)
+  })
 
-    // 6. volume-only
-    await runFfmpeg({ label: "volume-only", filters: ["volume=2dB"], outPath: volumeOnlyPath })
-
-    // 7. test chain (current)
-    const filters = ["highpass=f=200", "lowpass=f=4000", "volume=15dB"]
-    console.log("USING TEST MASTER CHAIN")
-    console.log("FILTERS:", filters)
-
-    await runFfmpeg({ label: "test-chain", filters, outPath: outputPath })
-
-    return { path: outputPath }
-  } catch (err) {
-    throw err
-  }
+  return { path: outputPath }
 
 }
