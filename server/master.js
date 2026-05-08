@@ -1,10 +1,13 @@
 import ffmpeg from "fluent-ffmpeg"
 import ffmpegPath from "ffmpeg-static"
 import fs from "fs"
+import path from "path"
 import { analyzeTrack } from "./analyze.js"
 
-if (ffmpegPath) {
-  ffmpeg.setFfmpegPath(ffmpegPath)
+console.log("FFMPEG STATIC PATH:", ffmpegPath)
+const resolvedFfmpegPath = ffmpegPath ? path.resolve(ffmpegPath) : null
+if (resolvedFfmpegPath) {
+  ffmpeg.setFfmpegPath(resolvedFfmpegPath)
 }
 
 const mastersDir = "/tmp/masters"
@@ -58,6 +61,10 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
       } catch (e) {}
       reject(new Error("Mastering timed out"))
     }, 60_000)
+
+    console.log("FFMPEG EXISTS:", resolvedFfmpegPath ? fs.existsSync(resolvedFfmpegPath) : false)
+    console.log("INPUT EXISTS:", fs.existsSync(file))
+    console.log("OUTPUT DIR EXISTS:", fs.existsSync("/tmp/masters"))
 
     const proc = ffmpeg(input)
       .noVideo()
