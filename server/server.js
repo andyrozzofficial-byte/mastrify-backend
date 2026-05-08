@@ -1011,7 +1011,7 @@ app.post(
       const wavObjectPath = `masters/${outputName}`
       const mp3ObjectPath = `previews/${previewName}`
 
-      const afterUrl = await uploadToSupabasePublic({
+      const finalAfterUrl = await uploadToSupabasePublic({
         localPath: outputPath,
         objectPath: wavObjectPath,
         contentType: "audio/wav",
@@ -1023,14 +1023,13 @@ app.post(
       })
 
       // Stable public URLs for clients
-      const after = afterUrl
       const previewAfterMp3 = previewAfterMp3Url
 
       return res.json({
         success: true,
         file: outputName,
-        after,
-        afterUrl,
+        after: finalAfterUrl,
+        afterUrl: finalAfterUrl,
         previewAfterMp3,
         previewAfterMp3Url
       })
