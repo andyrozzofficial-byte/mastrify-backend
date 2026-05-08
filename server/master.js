@@ -1,4 +1,5 @@
 import ffmpeg from "fluent-ffmpeg"
+import ffmpegPath from "ffmpeg-static"
 import ffprobePath from "ffprobe-static"
 import fs from "fs"
 import { spawn } from "child_process"
@@ -48,7 +49,7 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
   console.log("USING MINIMAL FFMPEG EXPORT")
   console.log("INPUT:", input)
   console.log("OUTPUT:", outputPath)
-  console.log("USING SYSTEM FFMPEG")
+  console.log("USING FFMPEG-STATIC")
 
   const probeResult = await new Promise((resolve) => {
     ffmpeg.ffprobe(file, (err, data) => {
@@ -79,6 +80,15 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
     console.log("INPUT EXISTS:", fs.existsSync(file))
     console.log("OUTPUT DIR EXISTS:", fs.existsSync("/tmp/masters"))
 
+    console.log("FFMPEG PATH:", ffmpegPath)
+    const ffStat = fs.statSync(ffmpegPath)
+    console.log("MODE:", ffStat.mode.toString(8))
+    try {
+      fs.chmodSync(ffmpegPath, 0o755)
+    } catch (e) {
+      console.log("CHMOD ERROR:", e?.message || e)
+    }
+
     const args = [
       "-y",
       "-i",
@@ -93,9 +103,9 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
       outputPath,
     ]
 
-    console.log("SPAWN FFMPEG:", "ffmpeg", args)
+    console.log("SPAWN FFMPEG:", ffmpegPath, args)
 
-    const ff = spawn("ffmpeg", args)
+    const ff = spawn(ffmpegPath, args, { shell: false })
     cmdRef = ff
 
     ff.stderr.on("data", (d) => {
