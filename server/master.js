@@ -5,6 +5,10 @@ import fs from "fs"
 import { spawn } from "child_process"
 import { analyzeTrack } from "./analyze.js"
 
+console.log("PLATFORM:", process.platform)
+console.log("ARCH:", process.arch)
+console.log("FFMPEG PATH:", ffmpegPath)
+
 if (ffprobePath?.path) {
   ffmpeg.setFfprobePath(ffprobePath.path)
 }
@@ -80,6 +84,7 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
     console.log("INPUT EXISTS:", fs.existsSync(file))
     console.log("OUTPUT DIR EXISTS:", fs.existsSync("/tmp/masters"))
 
+    // ls -l equivalent bits for the binary
     console.log("FFMPEG PATH:", ffmpegPath)
     const ffStat = fs.statSync(ffmpegPath)
     console.log("MODE:", ffStat.mode.toString(8))
@@ -98,8 +103,10 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
       "44100",
       "-ac",
       "2",
-      "-b:a",
-      "320k",
+      "-c:a",
+      "pcm_s16le",
+      "-f",
+      "wav",
       outputPath,
     ]
 

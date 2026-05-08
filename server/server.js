@@ -884,7 +884,7 @@ app.post(
       } catch (e) {
         console.log("UPLOAD STAT ERROR:", e?.message || e)
       }
-      const outputName = "master_" + Date.now() + ".mp3"
+      const outputName = "master_" + Date.now() + ".wav"
       const outputPath = "/tmp/masters/" + outputName
 
       await masterTrack({
