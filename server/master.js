@@ -1,7 +1,11 @@
-import ffmpegStatic from "ffmpeg-static"
+import ffmpeg from "fluent-ffmpeg"
+import ffmpegPath from "ffmpeg-static"
 import fs from "fs"
-import { spawn } from "child_process"
 import { analyzeTrack } from "./analyze.js"
+
+if (ffmpegPath) {
+  ffmpeg.setFfmpegPath(ffmpegPath)
+}
 
 const mastersDir = "/tmp/masters"
 if (!fs.existsSync(mastersDir)) {
@@ -55,48 +59,39 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
       reject(new Error("Mastering timed out"))
     }, 60_000)
 
-    console.log("INPUT EXISTS:", fs.existsSync(input))
-    console.log("INPUT SIZE:", fs.statSync(input).size)
-
-    const ffmpegBin = ffmpegStatic || "ffmpeg"
-    const ff = spawn(ffmpegBin, [
-      "-i", input,
-      "-vn",
-      "-ac", "2",
-      "-ar", "44100",
-      "-c:a", "pcm_s16le",
-      outputPath
-    ])
-
-    cmdRef = ff
-
-    ff.stderr.on("data", (d) => {
-      console.log("RAW FFMPEG:", d.toString())
-    })
-
-    ff.on("close", (code) => {
-      console.log("FFMPEG EXIT CODE:", code)
-      if (settled) return
-      settled = true
-      clearTimeout(timeoutId)
-      if (code === 0) {
-        console.log("✅ FFMPEG END")
+    const proc = ffmpeg(input)
+      .noVideo()
+      .audioChannels(2)
+      .audioFrequency(44100)
+      .audioCodec("pcm_s16le")
+      .format("wav")
+      .on("start", (cmd) => {
+        console.log("FFMPEG START:", cmd)
+        cmdRef = proc
+      })
+      .on("stderr", (line) => {
+        console.log("FFMPEG STDERR:", line)
+      })
+      .on("end", () => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeoutId)
+        console.log("FFMPEG DONE")
         if (!fs.existsSync(outputPath)) {
           return reject(new Error("Master completed but output file missing"))
         }
         resolve()
-      } else {
-        reject(new Error(`ffmpeg exited with code ${code}`))
-      }
-    })
+      })
+      .on("error", (err) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeoutId)
+        console.error("FFMPEG ERROR:", err)
+        reject(err)
+      })
 
-    ff.on("error", (err) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timeoutId)
-      console.log("❌ FFMPEG ERROR:", err)
-      reject(err)
-    })
+    cmdRef = proc
+    proc.save(outputPath)
   })
 
   let referenceAnalysis = null
