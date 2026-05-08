@@ -1,18 +1,7 @@
-import ffmpeg from "fluent-ffmpeg"
 import ffmpegStatic from "ffmpeg-static"
-import ffprobePath from "ffprobe-static"
 import fs from "fs"
+import { spawn } from "child_process"
 import { analyzeTrack } from "./analyze.js"
-
-// Ensure ffmpeg binary exists in deployments (e.g. Railway)
-if (ffmpegStatic) {
-  ffmpeg.setFfmpegPath(ffmpegStatic)
-}
-
-// Ensure ffprobe binary exists in deployments (e.g. Railway)
-if (ffprobePath?.path) {
-  ffmpeg.setFfprobePath(ffprobePath.path)
-}
 
 const mastersDir = "/tmp/masters"
 if (!fs.existsSync(mastersDir)) {
@@ -55,7 +44,6 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
   await new Promise((resolve, reject) => {
     let settled = false
     let cmdRef = null
-    let stderrLogs = ""
 
     const timeoutId = setTimeout(() => {
       if (settled) return
@@ -70,43 +58,45 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
     console.log("INPUT EXISTS:", fs.existsSync(input))
     console.log("INPUT SIZE:", fs.statSync(input).size)
 
-    const proc = ffmpeg()
-      .input(input)
-      .noVideo()
-      .audioChannels(2)
-      .audioFrequency(44100)
-      .audioCodec("pcm_s16le")
-      .format("wav")
-      .on("start", (cmd) => {
-        console.log("🚀 FFMPEG START:", cmd)
-        cmdRef = proc
-      })
-      .on("stderr", (line) => {
-        stderrLogs += line + "\n"
-        console.log("FFMPEG STDERR:", line)
-      })
-      .on("end", () => {
-        if (settled) return
-        settled = true
-        clearTimeout(timeoutId)
+    const ffmpegBin = ffmpegStatic || "ffmpeg"
+    const ff = spawn(ffmpegBin, [
+      "-i", input,
+      "-vn",
+      "-ac", "2",
+      "-ar", "44100",
+      "-c:a", "pcm_s16le",
+      outputPath
+    ])
+
+    cmdRef = ff
+
+    ff.stderr.on("data", (d) => {
+      console.log("RAW FFMPEG:", d.toString())
+    })
+
+    ff.on("close", (code) => {
+      console.log("FFMPEG EXIT CODE:", code)
+      if (settled) return
+      settled = true
+      clearTimeout(timeoutId)
+      if (code === 0) {
         console.log("✅ FFMPEG END")
-        console.log("FFMPEG STDERR FULL:\n", stderrLogs)
         if (!fs.existsSync(outputPath)) {
           return reject(new Error("Master completed but output file missing"))
         }
         resolve()
-      })
-      .on("error", (err) => {
-        if (settled) return
-        settled = true
-        clearTimeout(timeoutId)
-        console.log("❌ FFMPEG ERROR:", err)
-        console.log("FULL STDERR:\n", stderrLogs)
-        reject(err)
-      })
+      } else {
+        reject(new Error(`ffmpeg exited with code ${code}`))
+      }
+    })
 
-    cmdRef = proc
-    proc.save(outputPath)
+    ff.on("error", (err) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeoutId)
+      console.log("❌ FFMPEG ERROR:", err)
+      reject(err)
+    })
   })
 
   let referenceAnalysis = null
