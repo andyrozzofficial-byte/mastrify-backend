@@ -877,6 +877,13 @@ app.post(
       }
 
       const inputPath = req.file.path
+      console.log("UPLOAD PATH:", inputPath)
+      console.log("UPLOAD SIZE (multer):", req.file.size)
+      try {
+        console.log("UPLOAD SIZE (fs):", fs.statSync(inputPath).size)
+      } catch (e) {
+        console.log("UPLOAD STAT ERROR:", e?.message || e)
+      }
       const outputName = "master_" + Date.now() + ".mp3"
       const outputPath = "/tmp/masters/" + outputName
 

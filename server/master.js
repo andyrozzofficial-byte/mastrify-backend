@@ -1,5 +1,6 @@
 import ffmpeg from "fluent-ffmpeg"
 import ffmpegPath from "ffmpeg-static"
+import ffprobePath from "ffprobe-static"
 import fs from "fs"
 import path from "path"
 import { analyzeTrack } from "./analyze.js"
@@ -8,6 +9,10 @@ console.log("FFMPEG STATIC PATH:", ffmpegPath)
 const resolvedFfmpegPath = ffmpegPath ? path.resolve(ffmpegPath) : null
 if (resolvedFfmpegPath) {
   ffmpeg.setFfmpegPath(resolvedFfmpegPath)
+}
+
+if (ffprobePath?.path) {
+  ffmpeg.setFfprobePath(ffprobePath.path)
 }
 
 const mastersDir = "/tmp/masters"
@@ -36,6 +41,9 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
   const input = file
   const outputPath = output
 
+  console.log("INPUT PATH:", file)
+  console.log("INPUT SIZE:", fs.statSync(file).size)
+
   if (!outputPath) {
     throw new Error("❌ Output path missing")
   }
@@ -47,6 +55,18 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
   console.log("USING MINIMAL FFMPEG EXPORT")
   console.log("INPUT:", input)
   console.log("OUTPUT:", outputPath)
+
+  const probeResult = await new Promise((resolve) => {
+    ffmpeg.ffprobe(file, (err, data) => {
+      console.log("FFPROBE ERROR:", err)
+      console.log("FFPROBE DATA:", JSON.stringify(data, null, 2))
+      resolve({ err, data })
+    })
+  })
+
+  if (probeResult?.err) {
+    throw new Error(`ffprobe failed: ${probeResult.err.message || probeResult.err}`)
+  }
 
   await new Promise((resolve, reject) => {
     let settled = false
