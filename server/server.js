@@ -33,6 +33,38 @@ app.use(cors({
 app.use(express.json())
 app.options('*', cors())
 
+const SUPABASE_URL = process.env.SUPABASE_URL || ""
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
+const SUPABASE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "masters"
+
+async function uploadToSupabasePublic({ localPath, objectPath, contentType }) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
+  }
+
+  const data = fs.readFileSync(localPath)
+  const url = `${SUPABASE_URL.replace(/\\/$/, "")}/storage/v1/object/${encodeURIComponent(SUPABASE_BUCKET)}/${objectPath}`
+
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      "content-type": contentType,
+      "x-upsert": "true",
+    },
+    body: data,
+  })
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(`Supabase upload failed (${res.status}): ${text}`)
+  }
+
+  const publicUrl = `${SUPABASE_URL.replace(/\\/$/, "")}/storage/v1/object/public/${encodeURIComponent(SUPABASE_BUCKET)}/${objectPath}`
+  return publicUrl
+}
+
 // ✅ LÄGG TILL DENNA
 app.get("/", (req, res) => {
   res.send("Mastrify backend is live 🚀")
@@ -916,8 +948,8 @@ app.post(
       const proto = xfProto || req.protocol
       const host = (req.headers["x-forwarded-host"] || req.get("host") || "").toString()
       const baseUrl = `${proto}://${host}`
-      const afterUrl = `${baseUrl}${after}`
-      console.log("MASTER WAV URL:", afterUrl)
+      const afterUrlLocal = `${baseUrl}${after}`
+      console.log("MASTER WAV URL:", afterUrlLocal)
 
       // iOS fallback: generate MP3 preview clip (60s–90s) from the mastered WAV
       const previewName = outputName.replace(/\.wav$/i, "_preview.mp3")
@@ -972,8 +1004,27 @@ app.post(
         console.log("MP3 PREVIEW FAILED:", e?.message || e)
       }
 
-      const previewAfterMp3 = `/masters/${previewName}`
-      const previewAfterMp3Url = `${baseUrl}${previewAfterMp3}`
+      const previewAfterMp3Local = `/masters/${previewName}`
+      const previewAfterMp3UrlLocal = `${baseUrl}${previewAfterMp3Local}`
+
+      // Upload WAV + MP3 preview to persistent public storage (Supabase Storage)
+      const wavObjectPath = `masters/${outputName}`
+      const mp3ObjectPath = `previews/${previewName}`
+
+      const afterUrl = await uploadToSupabasePublic({
+        localPath: outputPath,
+        objectPath: wavObjectPath,
+        contentType: "audio/wav",
+      })
+      const previewAfterMp3Url = await uploadToSupabasePublic({
+        localPath: previewPath,
+        objectPath: mp3ObjectPath,
+        contentType: "audio/mpeg",
+      })
+
+      // Stable public URLs for clients
+      const after = afterUrl
+      const previewAfterMp3 = previewAfterMp3Url
 
       return res.json({
         success: true,
