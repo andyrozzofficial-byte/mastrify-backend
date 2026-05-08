@@ -108,7 +108,7 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
       "-f",
       "wav",
       "-af",
-      "highpass=f=25,equalizer=f=80:t=q:w=1:g=1.2,equalizer=f=12000:t=q:w=1:g=1.2,alimiter=limit=0.97",
+      "highpass=f=25,equalizer=f=80:t=q:w=1:g=1.2,equalizer=f=12000:t=q:w=1:g=1.5,volume=4dB,alimiter=limit=0.96",
       outputPath,
     ]
 
