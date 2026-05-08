@@ -1,16 +1,8 @@
 import ffmpeg from "fluent-ffmpeg"
-import ffmpegPath from "ffmpeg-static"
 import ffprobePath from "ffprobe-static"
 import fs from "fs"
-import path from "path"
 import { spawn } from "child_process"
 import { analyzeTrack } from "./analyze.js"
-
-console.log("FFMPEG STATIC PATH:", ffmpegPath)
-const resolvedFfmpegPath = ffmpegPath ? path.resolve(ffmpegPath) : null
-if (resolvedFfmpegPath) {
-  ffmpeg.setFfmpegPath(resolvedFfmpegPath)
-}
 
 if (ffprobePath?.path) {
   ffmpeg.setFfprobePath(ffprobePath.path)
@@ -56,6 +48,7 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
   console.log("USING MINIMAL FFMPEG EXPORT")
   console.log("INPUT:", input)
   console.log("OUTPUT:", outputPath)
+  console.log("USING SYSTEM FFMPEG")
 
   const probeResult = await new Promise((resolve) => {
     ffmpeg.ffprobe(file, (err, data) => {
@@ -83,7 +76,6 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
       reject(new Error("Mastering timed out"))
     }, 60_000)
 
-    console.log("FFMPEG EXISTS:", resolvedFfmpegPath ? fs.existsSync(resolvedFfmpegPath) : false)
     console.log("INPUT EXISTS:", fs.existsSync(file))
     console.log("OUTPUT DIR EXISTS:", fs.existsSync("/tmp/masters"))
 
@@ -101,9 +93,9 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
       outputPath,
     ]
 
-    console.log("SPAWN FFMPEG:", ffmpegPath, args)
+    console.log("SPAWN FFMPEG:", "ffmpeg", args)
 
-    const ff = spawn(resolvedFfmpegPath || ffmpegPath, args)
+    const ff = spawn("ffmpeg", args)
     cmdRef = ff
 
     ff.stderr.on("data", (d) => {
