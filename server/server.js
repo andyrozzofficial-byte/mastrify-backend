@@ -877,7 +877,7 @@ app.post(
       }
 
       const inputPath = req.file.path
-      const outputName = "master_" + Date.now() + ".wav"
+      const outputName = "master_" + Date.now() + ".mp3"
       const outputPath = "/tmp/masters/" + outputName
 
       await masterTrack({

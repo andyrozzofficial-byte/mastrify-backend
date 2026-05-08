@@ -70,8 +70,9 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
       .noVideo()
       .audioChannels(2)
       .audioFrequency(44100)
-      .audioCodec("pcm_s16le")
-      .format("wav")
+      .audioCodec("libmp3lame")
+      .audioBitrate("320k")
+      .format("mp3")
       .on("start", (cmd) => {
         console.log("FFMPEG START:", cmd)
         cmdRef = proc
