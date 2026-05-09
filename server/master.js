@@ -67,6 +67,72 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
     throw new Error(`ffprobe failed: ${probeResult.err.message || probeResult.err}`)
   }
 
+  /** RMS-proxy level from analyze.js — good enough to trim hot/quiet mixes before the chain */
+  let stagingDb = 0
+  let preAnalysis = null
+  try {
+    preAnalysis = await analyzeTrack(input)
+    const raw = typeof preAnalysis.lufs === "number" ? preAnalysis.lufs : -18
+    const stagingTarget = -15
+    stagingDb = stagingTarget - raw
+    stagingDb = Math.max(-12, Math.min(6, stagingDb))
+    console.log("INPUT STAGING:", { rawLevelDb: raw, stagingDb })
+  } catch (e) {
+    console.log("PRE-ANALYSIS STAGING SKIP:", e?.message || e)
+  }
+
+  /** Cap hottest integrated target at -9 LUFS (prevents accidental ~-5 unless we raise this later) */
+  const safeIntegratedLufs = Math.min(targetLufs, -9)
+
+  const tone =
+    style === "WARM"
+      ? {
+          lowHz: 72,
+          lowGain: 1.12,
+          mudGain: -1.15,
+          mudWideGain: -0.45,
+          airHz: 12500,
+          airGain: 0.16,
+          dipAboveAirHz: 15500,
+          dipAboveAirGain: -0.35,
+        }
+      : style === "LOUD" || style === "FESTIVAL"
+        ? {
+            lowHz: 82,
+            lowGain: 1.02,
+            mudGain: -1.25,
+            mudWideGain: -0.5,
+            airHz: 13000,
+            airGain: 0.18,
+            dipAboveAirHz: 15500,
+            dipAboveAirGain: -0.45,
+          }
+        : {
+            lowHz: 78,
+            lowGain: 1.06,
+            mudGain: -1.12,
+            mudWideGain: -0.4,
+            airHz: 13000,
+            airGain: 0.2,
+            dipAboveAirHz: 15500,
+            dipAboveAirGain: -0.38,
+          }
+
+  const volumeStaging =
+    stagingDb === 0 ? "" : `volume=${stagingDb.toFixed(2)}dB,`
+
+  const audioFilter =
+    `highpass=f=25,` +
+    volumeStaging +
+    `equalizer=f=200:t=q:w=1:g=${tone.mudGain},` +
+    `equalizer=f=320:t=q:w=1:g=${tone.mudWideGain},` +
+    `equalizer=f=${tone.lowHz}:t=q:w=0.92:g=${tone.lowGain},` +
+    `equalizer=f=9800:t=q:w=1:g=0.32,` +
+    `acompressor=threshold=-18dB:ratio=1.55:attack=30:release=240,` +
+    `equalizer=f=${tone.airHz}:t=q:w=1.15:g=${tone.airGain},` +
+    `equalizer=f=${tone.dipAboveAirHz}:t=q:w=1:g=${tone.dipAboveAirGain},` +
+    `loudnorm=I=${safeIntegratedLufs}:LRA=10:TP=-1:linear=true`
+
   await new Promise((resolve, reject) => {
     let settled = false
     let cmdRef = null
@@ -108,7 +174,7 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
       "-f",
       "wav",
       "-af",
-      "highpass=f=25,acompressor=threshold=-14dB:ratio=1.8:attack=20:release=120:makeup=2,equalizer=f=80:t=q:w=1:g=1.2,equalizer=f=12000:t=q:w=1:g=1.5,volume=3dB,alimiter=limit=0.96",
+      audioFilter,
       outputPath,
     ]
 
@@ -158,9 +224,15 @@ export async function masterTrack({ file, output, reference, style, targetLufs, 
     targetLufs = referenceAnalysis.lufs
   }
 
-  const analysis = await analyzeTrack(input)
+  let analysis = preAnalysis
+  try {
+    analysis = await analyzeTrack(outputPath)
+  } catch (e) {
+    console.log("OUTPUT ANALYSIS FALLBACK:", e?.message || e)
+  }
 
   console.log("TARGET LUFS:", targetLufs)
+  console.log("SAFE INTEGRATED LUFS (loudnorm):", safeIntegratedLufs)
   console.log("REFERENCE LUFS:", referenceAnalysis?.lufs)
   console.log("🔥 USING FFMPEG MASTER")
   console.log("🎧 ANALYSIS:", analysis)
