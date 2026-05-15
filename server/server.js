@@ -74,6 +74,12 @@ app.get("/", (req, res) => {
   res.send("Mastrify backend is live 🚀")
 })
 
+app.get("/debug-version", (req, res) => {
+  res.json({
+    debugVersion: "NEW_MASTER_RESPONSE_V2"
+  })
+})
+
 // absolute paths
 const uploadsDir = "/tmp/uploads"
 const mastersDir = "/tmp/masters"
