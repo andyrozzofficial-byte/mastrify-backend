@@ -3,6 +3,7 @@ import decodeAudio from "audio-decode"
 import MusicTempo from "music-tempo"
 import { fft } from "fft-js"
 
+// analyzeTrack uses audio-decode only (no ffmpeg). Mastering uses ffmpeg-static/ffprobe-static in master.js.
 export async function analyzeTrack(file){
 
 const buffer = fs.readFileSync(file)
@@ -74,25 +75,59 @@ let dynamicRange = (peak > 0 && rms > 0)
   : 0
 
 
-// ================= FFT =================
+// ================= FFT (many windows across the file) =================
+// A single 2048-sample slice (~46 ms @ 44.1 kHz) made bassWeight/brightness
+// almost identical for different masters of the same source. Average band
+// ratios over spaced windows so EQ / loudness changes show in “After” metrics.
 
-const slice = left.slice(0, 2048)
-const spectrum = fft(slice).map(x => Math.abs(x[0]))
+const WIN = 2048
 
-let low = 0
-let mid = 0
-let high = 0
-
-for(let i=0;i<spectrum.length;i++){
-  if(i < spectrum.length*0.2) low += spectrum[i]
-  else if(i < spectrum.length*0.6) mid += spectrum[i]
-  else high += spectrum[i]
+function bandRatiosFromWindow(samples) {
+  let buf = samples
+  if (buf.length < WIN) {
+    buf = new Float32Array(WIN)
+    buf.set(samples)
+  } else if (buf.length > WIN) {
+    buf = buf.subarray(0, WIN)
+  }
+  const spectrum = fft(buf).map((x) => Math.abs(x[0]))
+  let low = 0
+  let mid = 0
+  let high = 0
+  for (let i = 0; i < spectrum.length; i++) {
+    if (i < spectrum.length * 0.2) low += spectrum[i]
+    else if (i < spectrum.length * 0.6) mid += spectrum[i]
+    else high += spectrum[i]
+  }
+  const totalSpec = low + mid + high || 1
+  return { lowEnergy: low / totalSpec, highEnergy: high / totalSpec }
 }
 
-const totalSpec = low + mid + high || 1
-
-const lowEnergy = low / totalSpec
-const highEnergy = high / totalSpec
+let lowEnergy = 0
+let highEnergy = 0
+const n = left.length
+if (n < 64) {
+  const r = bandRatiosFromWindow(left)
+  lowEnergy = r.lowEnergy
+  highEnergy = r.highEnergy
+} else {
+  const maxWindows = 24
+  const span = Math.max(0, n - WIN)
+  const windowCount = Math.min(maxWindows, Math.max(4, 1 + Math.floor(n / (44100 * 2))))
+  let sumLow = 0
+  let sumHigh = 0
+  let used = 0
+  for (let k = 0; k < windowCount; k++) {
+    const off = span === 0 ? 0 : Math.floor((k / (windowCount - 1)) * span)
+    const slice = left.slice(off, off + WIN)
+    const r = bandRatiosFromWindow(slice)
+    sumLow += r.lowEnergy
+    sumHigh += r.highEnergy
+    used++
+  }
+  lowEnergy = sumLow / used
+  highEnergy = sumHigh / used
+}
 
 
 // ================= STEREO =================
