@@ -1,87 +1,111 @@
-import { exec } from "child_process"
-import { spawn } from "child_process"
 import express from "express"
 import cors from "cors"
 import multer from "multer"
+import rateLimit from "express-rate-limit"
 import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
+import { analyzeTrack } from "./analyze.js"
+import { masterTrack, measureIntegratedLufsEbur128 } from "./master.js"
+import { serializeMasterAnalysisForJson } from "./masterAnalysisPayload.js"
+import { serializeMasteringInsightsForJson } from "./masterInsightsPayload.js"
+import { MASTRIFY_LUFS_TRACE as LUFS_TRACE, MASTRIFY_PIPELINE_DEBUG as PIPELINE_DEBUG } from "./mastrifyDebug.js"
+import {
+  persistMasterExport,
+  createMasterPlaybackSignedUrl,
+  createPreviewPlaybackSignedUrl,
+  isSupabaseStorageConfigured,
+  uploadMasterPreviewMp3,
+  safeUnlink,
+  signedUrlExpiresAt,
+  startMasterStorageCleanupScheduler,
+} from "./supabaseStorage.js"
+import { deliverMasterExportEmail } from "./masteredExportDelivery.js"
+import { generateMasterPreviewMp3, previewFileNameForMaster } from "./masterPreview.js"
+import { verifyPaidCheckoutForObjectKey } from "./stripeCheckout.js"
+import { verifyFreeOrderForObjectKey } from "./discountCodes.js"
 import ffmpegPath from "ffmpeg-static"
+import ffprobeStatic from "ffprobe-static"
 
 process.on("uncaughtException", (err) => {
-  console.error("💥 UNCAUGHT:", err)
+  console.error("Uncaught exception:", err)
 })
 
 process.on("unhandledRejection", (err) => {
-  console.error("💥 PROMISE ERROR:", err)
+  console.error("Unhandled promise rejection:", err)
 })
-
-import { analyzeTrack } from "./analyze.js"
-import { masterTrack } from "./master.js"
 // import { aiMixAssistant } from "./ai.js"
 // import { buildMasteringChain } from "./masteringEngine.js"
-
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const app = express()
 
-app.use(cors({
-  origin: "*"
-}))
-app.use(express.json())
-app.options('*', cors())
+const ALLOWED_CORS_ORIGINS = new Set([
+  "https://www.mastrify.com",
+  "https://mastrify.com",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+])
 
-const SUPABASE_URL = process.env.SUPABASE_URL || ""
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ""
-// Support both names; Railway env should use SUPABASE_BUCKET per our convention
-const SUPABASE_BUCKET =
-  process.env.SUPABASE_BUCKET ||
-  process.env.SUPABASE_STORAGE_BUCKET ||
-  "masters"
-
-async function uploadToSupabasePublic({ localPath, objectPath, contentType }) {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    return null
-  }
-
-  const data = fs.readFileSync(localPath)
-  const url = `${SUPABASE_URL.replace(/\/$/, "")}/storage/v1/object/${encodeURIComponent(SUPABASE_BUCKET)}/${objectPath}`
-
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: {
-      authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      "content-type": contentType,
-      "x-upsert": "true",
-    },
-    body: data,
-  })
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "")
-    throw new Error(`Supabase upload failed (${res.status}): ${text}`)
-  }
-
-  const publicUrl = `${SUPABASE_URL.replace(/\/$/, "")}/storage/v1/object/public/${encodeURIComponent(SUPABASE_BUCKET)}/${objectPath}`
-  return publicUrl
+function isAllowedCorsOrigin(origin) {
+  if (!origin) return true
+  if (ALLOWED_CORS_ORIGINS.has(origin)) return true
+  if (/^https:\/\/[\w-]+\.vercel\.app$/.test(origin)) return true
+  return false
 }
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (isAllowedCorsOrigin(origin)) {
+        callback(null, true)
+        return
+      }
+      callback(new Error("Not allowed by CORS"))
+    },
+  }),
+)
+app.use(express.json({ limit: "1mb" }))
+
+const uploadRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many upload requests. Please try again later." },
+})
+
+const deliverRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 25,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many delivery requests. Please try again later." },
+})
+
+// Entry: Railway with Root Directory "server" runs `npm start` → `node server.js` (this file).
+// Not used for deploy: AI-Mastering_copy submodule server/ (legacy copy; use this server/ only).
 
 // ✅ LÄGG TILL DENNA
 app.get("/", (req, res) => {
   res.send("Mastrify backend is live 🚀")
 })
 
+// GET /debug-version — Railway deploy probe (must stay directly under GET /).
+app.get("/debug-version", (req, res) => {
+  res.json({
+    debugVersion: "NEW_MASTER_RESPONSE_V2"
+  })
+})
+
 // absolute paths
 const uploadsDir = "/tmp/uploads"
 const mastersDir = "/tmp/masters"
-console.log("Uploads exists:", fs.existsSync(uploadsDir))
-console.log("Masters exists:", fs.existsSync(mastersDir))
-console.log("MASTERS DIR:", mastersDir)
+const mastersPrivateDir = "/tmp/masters-private"
 
-// ensure folders exist
+// Ensure dirs at cold boot (Railway /tmp is often empty).
 try {
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true })
@@ -90,47 +114,173 @@ try {
   if (!fs.existsSync(mastersDir)) {
     fs.mkdirSync(mastersDir, { recursive: true })
   }
+  if (!fs.existsSync(mastersPrivateDir)) {
+    fs.mkdirSync(mastersPrivateDir, { recursive: true })
+  }
 } catch (err) {
-  console.log("Folder error:", err)
+  console.error("Failed to create uploads/masters directories:", err)
 }
 
-// serve masters folder
-app.use("/uploads", express.static(uploadsDir))
-app.get("/masters/:file", (req, res) => {
-  const filePath = path.join(mastersDir, req.params.file)
+/** MIME for mastered assets under /masters — Safari requires accurate types + byte ranges. */
+function contentTypeForMasterFile(basename) {
+  const ext = path.extname(basename).toLowerCase()
+  if (ext === ".mp3" || ext === ".mpeg") return "audio/mpeg"
+  if (ext === ".wav" || ext === ".wave") return "audio/wav"
+  if (ext === ".flac") return "audio/flac"
+  if (ext === ".m4a") return "audio/mp4"
+  if (ext === ".aac") return "audio/aac"
+  return "application/octet-stream"
+}
 
-  console.log("Serving file:", filePath)
+function parseBytesRange(rangeHeader, size) {
+  if (!rangeHeader || typeof rangeHeader !== "string" || !rangeHeader.startsWith("bytes=")) return null
+  const part = rangeHeader.slice(6).split(",")[0].trim()
+  const m = /^(\d*)-(\d*)$/.exec(part)
+  if (!m) return null
+  const startStr = m[1]
+  const endStr = m[2]
+
+  if (startStr !== "" && endStr !== "") {
+    const start = Number(startStr)
+    const end = Number(endStr)
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= size) return "unsatisfiable"
+    return { start, end: Math.min(end, size - 1) }
+  }
+  if (startStr !== "" && endStr === "") {
+    const start = Number(startStr)
+    if (!Number.isFinite(start) || start >= size) return "unsatisfiable"
+    return { start, end: size - 1 }
+  }
+  if (startStr === "" && endStr !== "") {
+    const suffixLen = Number(endStr)
+    if (!Number.isFinite(suffixLen) || suffixLen <= 0) return null
+    if (suffixLen >= size) return { start: 0, end: size - 1 }
+    return { start: size - suffixLen, end: size - 1 }
+  }
+  return null
+}
+
+function attachmentNameForMaster(basename, mime) {
+  if (/\.wav$/i.test(basename)) return "master.wav"
+  if (/\.mp3$/i.test(basename)) return "master.mp3"
+  if (/\.flac$/i.test(basename)) return "master.flac"
+  if (mime === "audio/mpeg") return "master.mp3"
+  if (mime === "audio/flac") return "master.flac"
+  if (mime === "audio/wav") return "master.wav"
+  return basename.replace(/[^\w.\-]+/g, "_") || "master.audio"
+}
+
+function sendMasterFile(req, res, headOnly) {
+  const raw = req.params.file
+  if (typeof raw !== "string" || raw.includes("..") || raw.includes("/") || raw.includes("\\")) {
+    return res.status(400).send("Invalid filename")
+  }
+  const basename = path.basename(raw)
+  const filePath = path.join(mastersDir, basename)
 
   if (!fs.existsSync(filePath)) {
-    console.log("❌ FILE NOT FOUND")
     return res.status(404).send("File not found")
   }
 
-  const ext = path.extname(req.params.file).toLowerCase()
-  if (ext === ".mp3") {
-    res.setHeader("Content-Type", "audio/mpeg")
-  } else {
-    res.setHeader("Content-Type", "audio/wav")
+  let stat
+  try {
+    stat = fs.statSync(filePath)
+  } catch {
+    return res.status(500).send("Stat failed")
   }
+  const size = stat.size
+  const mime = contentTypeForMasterFile(basename)
+  const forceDownload =
+    req.query.download === "1" ||
+    req.query.download === "true" ||
+    req.query.download === "yes"
+
   res.setHeader("Accept-Ranges", "bytes")
-  if (req.query.download === "1") {
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${path.basename(req.params.file)}"`
-    )
+  res.setHeader("Content-Type", mime)
+  res.setHeader("X-Content-Type-Options", "nosniff")
+
+  if (forceDownload) {
+    const fname = attachmentNameForMaster(basename, mime)
+    res.setHeader("Content-Disposition", `attachment; filename="${fname}"`)
+  } else {
+    res.setHeader("Content-Disposition", "inline")
   }
 
+  const rangeRaw = req.headers.range
+  const parsed = parseBytesRange(Array.isArray(rangeRaw) ? rangeRaw[0] : rangeRaw, size)
+
+  if (parsed === "unsatisfiable") {
+    res.status(416)
+    res.setHeader("Content-Range", `bytes */${size}`)
+    return res.end()
+  }
+
+  if (parsed && size > 0) {
+    const { start, end } = parsed
+    const chunkSize = end - start + 1
+    res.status(206)
+    res.setHeader("Content-Range", `bytes ${start}-${end}/${size}`)
+    res.setHeader("Content-Length", String(chunkSize))
+    if (headOnly) return res.end()
+    const stream = fs.createReadStream(filePath, { start, end })
+    stream.on("error", () => {
+      if (!res.headersSent) res.status(500).end()
+      else res.destroy()
+    })
+    return stream.pipe(res)
+  }
+
+  res.status(200)
+  res.setHeader("Content-Length", String(size))
+  if (headOnly) return res.end()
   const stream = fs.createReadStream(filePath)
-  stream.pipe(res)
-})
+  stream.on("error", () => {
+    if (!res.headersSent) res.status(500).end()
+    else res.destroy()
+  })
+  return stream.pipe(res)
+}
+
+app.head("/masters/:file", (req, res) => sendMasterFile(req, res, true))
+app.get("/masters/:file", (req, res) => sendMasterFile(req, res, false))
+const MAX_UPLOAD_BYTES = 500 * 1024 * 1024
+
+const ALLOWED_AUDIO_EXTENSIONS = new Set([
+  ".wav",
+  ".wave",
+  ".mp3",
+  ".mpeg",
+  ".m4a",
+  ".flac",
+  ".aiff",
+  ".aif",
+  ".aac",
+  ".ogg",
+  ".opus",
+  ".caf",
+])
+
+function audioUploadFileFilter(req, file, cb) {
+  const ext = path.extname(file.originalname || "").toLowerCase()
+  const mime = (file.mimetype || "").toLowerCase()
+  const mimeOk = mime.startsWith("audio/") || mime === "application/octet-stream"
+  if (ALLOWED_AUDIO_EXTENSIONS.has(ext) || mimeOk) {
+    cb(null, true)
+    return
+  }
+  cb(new Error("Unsupported audio format"))
+}
+
 const upload = multer({
   storage: multer.diskStorage({
-    destination: uploadsDir, // 🔥 ÄNDRA HIT
+    destination: uploadsDir,
     filename: (req, file, cb) => {
-  const safeName = Date.now() + ".wav"
-  cb(null, safeName)
-}
-  })
+      const safeName = `${Date.now()}${path.extname(file.originalname || ".wav") || ".wav"}`
+      cb(null, safeName)
+    },
+  }),
+  limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 },
+  fileFilter: audioUploadFileFilter,
 })
 
 // cache analysis
@@ -389,10 +539,6 @@ if(!isNaN(stereo)){
 
   const finalScore = Math.max(0, Math.min(100, Math.round(score)))
 
-console.log("INPUT:", a)
-console.log("LUFS:", lufs)
-console.log("FINAL SCORE:", finalScore)
-
 return finalScore
 }
 
@@ -564,24 +710,20 @@ UPLOAD TRACK
 
 app.post(
 "/upload",
+uploadRateLimiter,
 upload.single("file"),
 async (req,res)=>{
 
 try {
 
-const track = req.file
+const file = req.file
 
-if(!track){
-  return res.status(400).json({error:"No track uploaded"})
+if(!file){
+  return res.status(400).json({error:"No file uploaded"})
 }
 
-// rename uploaded file
-const fileName = track.filename + ".wav"
-const newPath = track.path + ".wav"
-
-fs.renameSync(track.path, newPath)
-
-console.log("Uploaded:", fileName)
+const fileName = file.filename
+const newPath = file.path
 
 // const analysis = await analyzeTrack(newPath)
 const analysis = await analyzeTrack(newPath)
@@ -685,15 +827,10 @@ brightness: analysis.highEnergy ?? 0.25,
 })
 
 } catch (err) {
-
-console.log(err)
-
-
-
-res.status(500).json({
-error:"Upload failed"
-})
-
+  console.error("Upload failed:", err)
+  res.status(500).json({
+    error: "Upload failed",
+  })
 }
 
 })
@@ -704,8 +841,6 @@ error:"Upload failed"
 
 app.post("/analyze", upload.single("file"), async (req, res) => {
   try {
-
-    console.log("🔥 HIT /analyze")
 
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" })
@@ -914,160 +1049,388 @@ function generateDynamicFixes(analysis){
 MASTER TRACK
 */
 
-app.post(
-  "/master",
+app.post("/master",
+  uploadRateLimiter,
   upload.single("file"),
   async (req, res) => {
+  res.setTimeout(0) // 🔥 LÄGG DEN HÄR
 
-    try {
+  try {
 
-      if (!req.file) {
-        return res.status(400).json({ error: "No file received" })
+      const file = req.file
+
+      if (!file) {
+        return res.status(400).json({ error: "No file uploaded" })
       }
 
-      const inputPath = req.file.path
-      console.log("UPLOAD PATH:", inputPath)
-      console.log("UPLOAD SIZE (multer):", req.file.size)
-      try {
-        console.log("UPLOAD SIZE (fs):", fs.statSync(inputPath).size)
-      } catch (e) {
-        console.log("UPLOAD STAT ERROR:", e?.message || e)
-      }
-      const outputName = "master_" + Date.now() + ".wav"
-      const outputPath = "/tmp/masters/" + outputName
+      const fileName = file.filename
+      const newPath = file.path
 
-      await masterTrack({
-        file: inputPath,
-        output: outputPath
+      const masterFileName = Date.now() + "-master.wav"
+      const masterPath = path.join(mastersDir, masterFileName)
+
+      const body = req.body || {}
+      const stylePreset = body.stylePreset || body.style
+      const targetLufs = body.targetLufs
+      const stereoEnhance = body.stereoEnhance
+      const lowEndControl = body.lowEndControl
+      const clarityPresence = body.clarityPresence
+      const sliderDebug = body.sliderDebug ?? body.sliderDebugMode
+      const chainDebugMode = body.chainDebugMode ?? body.chainMode
+      const chainDebugSweep = body.chainDebugSweep
+      const deliveryEmail = typeof body.deliveryEmail === "string" ? body.deliveryEmail.trim() : ""
+      const deliveryTrackTitle =
+        typeof body.trackTitle === "string" && body.trackTitle.trim()
+          ? body.trackTitle.trim()
+          : path.parse(file.originalname || "").name
+
+      if (LUFS_TRACE) {
+        console.log("[LUFS_TRACE] POST /master incoming (req.body after multer)", {
+          targetLufs,
+          stylePreset,
+          stereoEnhance,
+          lowEndControl,
+          clarityPresence,
+          sliderDebug,
+          chainDebugMode,
+          chainDebugSweep,
+        })
+      }
+
+      const masterResult = await masterTrack({
+        file: newPath,
+        output: masterPath,
+        style: stylePreset,
+        targetLufs,
+        stereoEnhance,
+        lowEndControl,
+        clarityPresence,
+        sliderDebug,
+        chainDebugMode,
+        chainDebugSweep,
       })
 
-      const wavExists = fs.existsSync(outputPath)
-      console.log("MASTER WAV EXISTS BEFORE RESPONSE:", wavExists, outputPath)
-      if (!wavExists) {
-        throw new Error("Master WAV missing before response")
+      if (LUFS_TRACE) {
+        const ra = masterResult?.analysisAfter
+        console.log("[LUFS_TRACE] masterResult.analysisAfter from masterTrack()", {
+          lufs: ra?.lufs ?? null,
+          lufsRmsProxy: ra?.lufsRmsProxy ?? null,
+          targetLufsApplied: ra?.targetLufsApplied ?? null,
+          lufsTraceMeta: masterResult?.lufsTraceMeta ?? null,
+        })
       }
 
-      const after = `/masters/${outputName}`
-      const xfProto = (req.headers["x-forwarded-proto"] || "").toString().split(",")[0].trim()
-      const proto = xfProto || req.protocol
-      const host = (req.headers["x-forwarded-host"] || req.get("host") || "").toString()
-      const baseUrl = `${proto}://${host}`
-      const afterUrlLocal = `${baseUrl}${after}`
-      console.log("MASTER WAV URL:", afterUrlLocal)
+      const forwardedProto = req.headers["x-forwarded-proto"]
+      const proto = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto || req.protocol)
+        .split(",")[0]
+        .trim()
+      const baseUrl = `${proto}://${req.get("host")}`
+      const before = `/uploads/${fileName}`
+      const after = `/masters/${masterFileName}`
 
-      // iOS fallback: generate MP3 preview clip (60s–90s) from the mastered WAV
-      const previewName = outputName.replace(/\.wav$/i, "_preview.mp3")
-      const previewPath = "/tmp/masters/" + previewName
+      let rawBefore = masterResult?.analysisBefore ?? null
+      let rawAfter = masterResult?.analysisAfter ?? null
 
-      try {
-        console.log("GENERATING MP3 PREVIEW:", previewPath)
-        if (ffmpegPath) {
+      if (rawBefore == null && fs.existsSync(newPath)) {
+        try {
+          rawBefore = await analyzeTrack(newPath)
+        } catch {
+          /* optional fallback */
+        }
+      }
+
+      if (rawAfter == null && fs.existsSync(masterPath)) {
+        for (const delayMs of [0, 250, 600, 1200]) {
+          if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs))
           try {
-            fs.chmodSync(ffmpegPath, 0o755)
-          } catch (e) {
-            console.log("CHMOD ERROR (preview):", e?.message || e)
+            rawAfter = await analyzeTrack(masterPath)
+            if (rawAfter != null) break
+          } catch {
+            /* retry */
           }
         }
-
-        await new Promise((resolve, reject) => {
-          const args = [
-            "-y",
-            // cut a dedicated 30s preview (avoid iOS MP3 seeking entirely)
-            "-ss",
-            "60",
-            "-t",
-            "30",
-            "-i",
-            outputPath,
-            "-vn",
-            "-ar",
-            "44100",
-            "-ac",
-            "2",
-            "-b:a",
-            "320k",
-            "-c:a",
-            "libmp3lame",
-            "-f",
-            "mp3",
-            previewPath,
-          ]
-
-          console.log("SPAWN FFMPEG (MP3 PREVIEW):", ffmpegPath, args)
-          const ff = spawn(ffmpegPath, args, { shell: false })
-          ff.stderr.on("data", (d) => console.log("FFMPEG PREVIEW STDERR:", d.toString()))
-          ff.stdout.on("data", (d) => console.log("FFMPEG PREVIEW STDOUT:", d.toString()))
-          ff.on("close", (code) => {
-            console.log("FFMPEG PREVIEW EXIT CODE:", code)
-            if (code === 0) resolve(null)
-            else reject(new Error("mp3 preview ffmpeg failed"))
-          })
-          ff.on("error", (err) => reject(err))
-        })
-      } catch (e) {
-        console.log("MP3 PREVIEW FAILED:", e?.message || e)
       }
 
-      const previewAfterMp3Local = `/masters/${previewName}`
-      const previewAfterMp3UrlLocal = `${baseUrl}${previewAfterMp3Local}`
-
-      // Upload WAV + MP3 preview to persistent public storage (Supabase Storage)
-      const wavObjectPath = `masters/${outputName}`
-      const mp3ObjectPath = `previews/${previewName}`
-
-      let finalAfterUrl = null
-      let previewAfterMp3Url = null
-      try {
-        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-          console.log(
-            "⚠️ SUPABASE STORAGE DISABLED: missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY. Falling back to /masters URLs."
-          )
-        } else {
-          finalAfterUrl = await uploadToSupabasePublic({
-            localPath: outputPath,
-            objectPath: wavObjectPath,
-            contentType: "audio/wav",
-          })
-          previewAfterMp3Url = await uploadToSupabasePublic({
-            localPath: previewPath,
-            objectPath: mp3ObjectPath,
-            contentType: "audio/mpeg",
-          })
+      if (rawAfter && rawAfter.lufsRmsProxy == null && fs.existsSync(masterPath)) {
+        let ebu = await measureIntegratedLufsEbur128(masterPath)
+        if (ebu == null) {
+          await new Promise((r) => setTimeout(r, 220))
+          ebu = await measureIntegratedLufsEbur128(masterPath)
         }
-      } catch (e) {
+        if (ebu != null && Number.isFinite(ebu)) {
+          const prev = rawAfter.lufs
+          const appliedFromMaster =
+            rawAfter.targetLufsApplied ??
+            masterResult?.masteringInsights?.appliedLufs ??
+            null
+          rawAfter = {
+            ...rawAfter,
+            lufs: ebu,
+            lufsRmsProxy: prev,
+            ...(appliedFromMaster != null && Number.isFinite(Number(appliedFromMaster))
+              ? { targetLufsApplied: Number(appliedFromMaster) }
+              : {}),
+          }
+        }
+      }
+
+      const analysisBefore = serializeMasterAnalysisForJson(rawBefore, "before")
+      const analysisAfter = serializeMasterAnalysisForJson(rawAfter, "after")
+
+      if (LUFS_TRACE) {
+        console.log("[LUFS_TRACE] AUTHORITY_HTTP_JSON_AFTER_SERIALIZE", {
+          serializedAnalysisAfterLufs: analysisAfter?.lufs ?? null,
+          rawAfterLufsPreSerialize: rawAfter?.lufs ?? null,
+          rawAfterHasLufsRmsProxy: rawAfter?.lufsRmsProxy != null,
+        })
         console.log(
-          "⚠️ SUPABASE UPLOAD FAILED. Falling back to /masters URLs.",
-          e?.message || e
+          "[LUFS_TRACE] AUTHORITY_COMPARE rawAfter.lufs",
+          rawAfter?.lufs,
+          "vs serialized",
+          analysisAfter?.lufs,
+          "finiteNum applied:",
+          analysisAfter?.lufs !== rawAfter?.lufs ? "YES (check finiteNum)" : "same"
         )
       }
 
-      const responseAfterUrl = finalAfterUrl || afterUrlLocal
-      const responsePreviewMp3Url = previewAfterMp3Url || previewAfterMp3UrlLocal
+      if (PIPELINE_DEBUG) {
+        const absMaster = path.resolve(masterPath)
+        const absUpload = fs.existsSync(newPath) ? path.resolve(newPath) : null
+        console.log("[pipeline] POST /master", {
+          analyzedMasterPath: absMaster,
+          uploadPath: absUpload,
+          masterBytes: fs.existsSync(masterPath) ? fs.statSync(masterPath).size : 0,
+          body: { stylePreset, targetLufs, stereoEnhance, lowEndControl, clarityPresence, sliderDebug },
+          rawAfter: rawAfter
+            ? {
+                lufs: rawAfter.lufs,
+                lufsRmsProxy: rawAfter.lufsRmsProxy,
+                targetLufsApplied: rawAfter.targetLufsApplied,
+                stereoWidth: rawAfter.stereoWidth,
+                bassWeight: rawAfter.bassWeight,
+                brightness: rawAfter.brightness,
+                dynamicRange: rawAfter.dynamicRange,
+              }
+            : null,
+          analysisAfter,
+        })
+      }
 
-      return res.json({
-        success: true,
-        file: outputName,
-        after: responseAfterUrl,
-        afterUrl: responseAfterUrl,
-        previewAfterMp3: responsePreviewMp3Url,
-        previewAfterMp3Url: responsePreviewMp3Url
+      const masteringInsights = serializeMasteringInsightsForJson(
+        masterResult?.masteringInsights ?? rawAfter
+      )
+
+      const railwayPlaybackUrl = `${baseUrl}${after}`
+
+      const previewFileName = previewFileNameForMaster(masterFileName)
+      const previewPath = path.join(mastersDir, previewFileName)
+      let previewAfterMp3Url = null
+      try {
+        await generateMasterPreviewMp3(masterPath, previewPath)
+      } catch (previewErr) {
+        console.warn("[preview] MP3 preview generation failed:", previewErr?.message || previewErr)
+      }
+
+      const playback = await persistMasterExport({
+        localMasterPath: masterPath,
+        localUploadPath: newPath,
+        masterFileName,
+        railwayPlaybackUrl,
       })
 
+      if (fs.existsSync(masterPath)) {
+        try {
+          fs.renameSync(masterPath, path.join(mastersPrivateDir, masterFileName))
+        } catch (moveErr) {
+          console.warn("[storage] failed to move master WAV to private dir:", moveErr?.message || moveErr)
+        }
+      }
+
+      if (fs.existsSync(previewPath)) {
+        if (isSupabaseStorageConfigured()) {
+          try {
+            await uploadMasterPreviewMp3(previewPath, playback.objectKey)
+            previewAfterMp3Url = await createPreviewPlaybackSignedUrl(playback.objectKey)
+            safeUnlink(previewPath)
+          } catch (previewUploadErr) {
+            console.warn("[preview] Supabase preview upload failed:", previewUploadErr?.message || previewUploadErr)
+            previewAfterMp3Url = `${baseUrl}/masters/${previewFileName}`
+          }
+        } else {
+          previewAfterMp3Url = `${baseUrl}/masters/${previewFileName}`
+        }
+      }
+
+      // Paid delivery is handled by POST /master/deliver after Stripe checkout.
+      const delivery = { requested: false }
+
+      const resPayload = {
+        success: true,
+        before,
+        after: playback.after,
+        previewAfterMp3Url,
+        previewAfterMp3: previewAfterMp3Url,
+        objectKey: playback.objectKey,
+        expiresAt: playback.expiresAt,
+        analysisBefore,
+        analysisAfter,
+        ...(masteringInsights ? { masteringInsights } : {}),
+      }
+      if (delivery.requested) {
+        resPayload.delivery = delivery
+      }
+      if (masterResult?.debugInfo) {
+        resPayload.masterDebug = masterResult.debugInfo
+      }
+      if (masterResult?.chainDiagnostics) {
+        resPayload.chainDiagnostics = masterResult.chainDiagnostics
+      }
+      if (masterResult?.chainSweepReport) {
+        const sweep = masterResult.chainSweepReport
+        for (const r of sweep.renders ?? []) {
+          if (r.url) r.fullUrl = `${baseUrl}${r.url}`
+        }
+        for (const r of sweep.ranking ?? []) {
+          if (r.url) r.fullUrl = `${baseUrl}${r.url}`
+        }
+        resPayload.chainSweepReport = sweep
+        resPayload.culpritSummary = masterResult.culpritSummary ?? sweep.culpritSummary
+        resPayload.likelySuspect =
+          masterResult.likelySuspect ?? sweep.culpritSummary?.mostLikely ?? sweep.mostMovement ?? null
+        resPayload.chainSweepConsole = sweep.consoleReport
+      }
+      if (PIPELINE_DEBUG) {
+        resPayload.pipelineDebug = {
+          masterFileName,
+          analysisAfter,
+          hasLufsRmsProxy: Boolean(rawAfter && rawAfter.lufsRmsProxy != null),
+          masterBytes: fs.existsSync(masterPath) ? fs.statSync(masterPath).size : 0,
+          storage: playback.storage,
+          objectKey: playback.objectKey,
+          expiresAt: playback.expiresAt,
+          deliveryRequested: delivery.requested,
+        }
+      }
+      if (LUFS_TRACE) {
+        resPayload.lufsTrace = {
+          ...(masterResult?.lufsTraceMeta && typeof masterResult.lufsTraceMeta === "object"
+            ? masterResult.lufsTraceMeta
+            : {}),
+          rawAfterLufsPreSerialize: rawAfter?.lufs ?? null,
+          serializedAnalysisAfterLufs: analysisAfter?.lufs ?? null,
+          hint: "Production frontend now pins the live Railway backend. Use local env overrides only for local development.",
+        }
+        console.log(
+          "[LUFS_TRACE] AUTHORITY_RESPONSE_PAYLOAD lufsTrace.serializedAnalysisAfterLufs=",
+          resPayload.lufsTrace.serializedAnalysisAfterLufs,
+          "stamp=",
+          resPayload.lufsTrace.stamp
+        )
+      }
+      res.json(resPayload)
+
     } catch (err) {
-      console.error(err)
+      console.error("Master failed:", err)
       res.status(500).json({ error: "Master failed" })
     }
 
   }
 )
 
+app.post("/master/deliver", deliverRateLimiter, async (req, res) => {
+  try {
+    const body = req.body || {}
+    const email = typeof body.email === "string" ? body.email.trim() : ""
+    const objectKey = typeof body.objectKey === "string" ? body.objectKey.trim() : ""
+    const stripeSessionId =
+      typeof body.stripeSessionId === "string"
+        ? body.stripeSessionId.trim()
+        : typeof body.stripe_session_id === "string"
+          ? body.stripe_session_id.trim()
+          : ""
+    const freeOrderId =
+      typeof body.freeOrderId === "string"
+        ? body.freeOrderId.trim()
+        : typeof body.free_order_id === "string"
+          ? body.free_order_id.trim()
+          : ""
+    const expiresAt = typeof body.expiresAt === "string" && body.expiresAt.trim() ? body.expiresAt.trim() : null
+    const trackTitle = typeof body.trackTitle === "string" ? body.trackTitle.trim() : ""
 
+    if (!email || !objectKey || (!stripeSessionId && !freeOrderId)) {
+      return res.status(400).json({ success: false, error: "Missing delivery details" })
+    }
+
+    const payment = freeOrderId
+      ? await verifyFreeOrderForObjectKey(freeOrderId, objectKey)
+      : await verifyPaidCheckoutForObjectKey(stripeSessionId, objectKey)
+    if (!payment.ok) {
+      return res.status(payment.status).json({ success: false, error: payment.error })
+    }
+
+    let playbackUrl = ""
+    let resolvedExpiresAt = expiresAt
+    if (isSupabaseStorageConfigured()) {
+      try {
+        playbackUrl = await createMasterPlaybackSignedUrl(objectKey)
+        resolvedExpiresAt = resolvedExpiresAt || signedUrlExpiresAt()
+      } catch (err) {
+        console.error("[deliver] failed to create signed playback URL:", err?.message || err)
+        return res.status(500).json({ success: false, error: "Could not create secure download link" })
+      }
+    } else {
+      const privatePath = path.join(mastersPrivateDir, path.basename(objectKey))
+      if (!fs.existsSync(privatePath)) {
+        return res.status(404).json({ success: false, error: "Master export is not available" })
+      }
+      const forwardedProto = req.headers["x-forwarded-proto"]
+      const proto = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto || req.protocol)
+        .split(",")[0]
+        .trim()
+      const baseUrl = `${proto}://${req.get("host")}`
+      playbackUrl = `${baseUrl}/masters/${path.basename(objectKey)}`
+      try {
+        fs.copyFileSync(privatePath, path.join(mastersDir, path.basename(objectKey)))
+      } catch (copyErr) {
+        console.error("[deliver] failed to stage master for delivery:", copyErr?.message || copyErr)
+        return res.status(500).json({ success: false, error: "Could not prepare master download" })
+      }
+    }
+
+    const delivery = await deliverMasterExportEmail({
+      email,
+      objectKey,
+      playbackUrl,
+      expiresAt: resolvedExpiresAt,
+      trackTitle,
+    })
+
+    res.json({ success: true, delivery, playbackUrl, expiresAt: resolvedExpiresAt })
+  } catch (err) {
+    console.error("Master delivery failed:", err)
+    res.status(500).json({ success: false, error: "Delivery failed" })
+  }
+})
+
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(413).json({ error: "File too large (max 500MB)" })
+    }
+    return res.status(400).json({ error: err.message })
+  }
+  if (err?.message === "Unsupported audio format") {
+    return res.status(400).json({ error: "Unsupported audio format" })
+  }
+  if (err?.message === "Not allowed by CORS") {
+    return res.status(403).json({ error: "Origin not allowed" })
+  }
+  return next(err)
+})
 
 /* START SERVER */
 
 app.post("/waitlist", (req, res) => {
-  const { email } = req.body
-  console.log("🔥 New signup:", email)
   res.json({ success: true })
 })
 
@@ -1075,15 +1438,29 @@ app.get("/test", (req, res) => {
   res.send("TEST OK")
 })
 
-const PORT = process.env.PORT || 3001
-
-
-// 🔥 VIKTIG: snabb health response innan allt annat
 app.get("/health", (req, res) => {
   res.status(200).send("OK")
 })
 
-// 🔥 STARTA SERVER DIREKT
+const PORT = process.env.PORT || 3001
+
+function ensureFfmpegBinariesExecutable() {
+  const bin =
+    typeof ffmpegPath === "string" ? ffmpegPath : ffmpegPath != null ? String(ffmpegPath) : ""
+  const ffprobeBin = ffprobeStatic?.path ?? ""
+  for (const p of [bin, ffprobeBin].filter(Boolean)) {
+    try {
+      if (fs.existsSync(p)) fs.chmodSync(p, 0o755)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+ensureFfmpegBinariesExecutable()
+
+// 🔥 STARTA SERVER
 app.listen(PORT, "0.0.0.0", () => {
-  console.log("🔥 Server running on port", PORT)
+  console.log("Server listening on port", PORT)
+  startMasterStorageCleanupScheduler()
 })
